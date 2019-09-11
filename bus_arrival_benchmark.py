@@ -99,8 +99,7 @@ while True:
     if i+1 >= num_station_in_record:
         break
     this_round = [[] for k in range(max_station)]
-    last_direction = 0
-    flag = 0
+    flag = False
     while True:
         if i + 1 >= num_station_in_record:
             break
@@ -108,18 +107,19 @@ while True:
         next_element = aggregate_station_list[i + 1]
         this_station = line57_onebus_temp.loc[this_element[0], 'end_station']
         next_station = line57_onebus_temp.loc[next_element[0], 'end_station']
-
         this_direction = np.sign(next_station - this_station)
-        this_round[int(this_station)-1] = this_element
+        this_round[int(this_station) - 1] = this_element
+        i+=1
+        if flag and this_direction != last_direction:
+            break
         if this_direction == 1 and this_station == max_station:
             break
         if this_direction == -1 and this_station == 1:
             break
-
-
-
         last_direction = this_direction
-        i+=1
+        flag = True
+    total_round.append(this_round)
+    round_direction_list.append(last_direction)
 
 
 
@@ -129,7 +129,7 @@ while True:
 
 
 
-
+'''
 # then we find outliers and cluster
 delta1 = 72
 delta2 = 5
@@ -141,7 +141,7 @@ for ind, element in enumerate(aggregate_station_list):
     this_station = line57_onebus_temp.loc[element[0],'end_station']
     if ind+1<len(aggregate_station_list):
         0
-
+'''
 
 
 # then we calculate potential direction of each element
