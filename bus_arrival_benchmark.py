@@ -80,25 +80,75 @@ for j in range(line57_onebus_temp.shape[0]):
         record_index_list.append(line57_onebus_temp.index[j])
     else:
         aggregate_station_list.append(record_index_list)
+        if last_station == 1 or last_station== max_station:
+            aggregate_station_list.append(record_index_list)
+
         record_index_list = [line57_onebus_temp.index[j]]
         last_station = this_station
-# then we
-# then we calculate potential direction of each element
-potential_direction = np.zeros(len(aggregate_station_list))
-for ind, station_record_item in enumerate(aggregate_station_list):
-    for record in station_record_item:
-        two_stations = line57_onebus_temp.loc[record, ['start_station', 'end_station']]
-        if two_stations['start_station'] > 0 and two_stations['start_station'] <= max_station and two_stations[
-            'start_station'] != two_stations['end_station']:
-            potential_direction[ind] = 1 if two_stations['start_station'] < two_stations['end_station'] else -1
-            break
-
-
 # step 2. detect round information
 # for the first element, if we have direction information, then we can construct one round and match direction
 # otherwise, detect next 2 elements to see if there is a trend
 # then initialize an array with the first element being the direction,
 # others being the matched index in aggregate station table
+total_round = list()
+
+round_direction_list = list()
+num_station_in_record = len(aggregate_station_list)
+i = 0
+while True:
+    if i+1 >= num_station_in_record:
+        break
+    this_round = [[] for k in range(max_station)]
+    last_direction = 0
+    flag = 0
+    while True:
+        if i + 1 >= num_station_in_record:
+            break
+        this_element = aggregate_station_list[i]
+        next_element = aggregate_station_list[i + 1]
+        this_station = line57_onebus_temp.loc[this_element[0], 'end_station']
+        next_station = line57_onebus_temp.loc[next_element[0], 'end_station']
+
+        this_direction = np.sign(next_station - this_station)
+        this_round[int(this_station)-1] = this_element
+        if this_direction == 1 and this_station == max_station:
+            break
+        if this_direction == -1 and this_station == 1:
+            break
+
+
+
+        last_direction = this_direction
+        i+=1
+
+
+
+
+
+
+
+
+
+
+# then we find outliers and cluster
+delta1 = 72
+delta2 = 5
+
+station_i = np.zeros(len(aggregate_station_list))
+station_j = np.zeros(len(aggregate_station_list))
+
+for ind, element in enumerate(aggregate_station_list):
+    this_station = line57_onebus_temp.loc[element[0],'end_station']
+    if ind+1<len(aggregate_station_list):
+        0
+
+
+
+# then we calculate potential direction of each element
+
+
+
+
 
 
 cnx.close()
