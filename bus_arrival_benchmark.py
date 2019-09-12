@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.preprocessing import LabelEncoder
+import itertools
 
 
 def find_max_count(cnx):
@@ -79,12 +80,18 @@ for j in range(line57_onebus_temp.shape[0]):
     if last_station == this_station:
         record_index_list.append(line57_onebus_temp.index[j])
     else:
+        if j+1 < line57_onebus_temp.shape[0]:
+            next_station = line57_onebus_temp.iloc[j+1]['end_station']
+            if last_station == next_station:
+                line57_onebus_temp.iloc[j]['end_station'] = last_station
+                continue
         aggregate_station_list.append(record_index_list)
-        if last_station == 1 or last_station== max_station:
-            aggregate_station_list.append(record_index_list)
-
         record_index_list = [line57_onebus_temp.index[j]]
         last_station = this_station
+# notice there is error in station record, we first fix deviated station
+
+
+
 # step 2. detect round information
 # for the first element, if we have direction information, then we can construct one round and match direction
 # otherwise, detect next 2 elements to see if there is a trend
@@ -95,12 +102,19 @@ total_round = list()
 round_direction_list = list()
 num_station_in_record = len(aggregate_station_list)
 i = 0
+first_next_round = []
+first_next_station = 999
 while True:
     if i+1 >= num_station_in_record:
         break
     this_round = [[] for k in range(max_station)]
+    if first_next_station<900:
+        this_round[int(first_next_station)-1] = first_next_round
     flag = False
+    flag_next2 = False
     while True:
+        first_next_station = 999
+        first_next_round = []
         if i + 1 >= num_station_in_record:
             break
         this_element = aggregate_station_list[i]
@@ -108,18 +122,32 @@ while True:
         this_station = line57_onebus_temp.loc[this_element[0], 'end_station']
         next_station = line57_onebus_temp.loc[next_element[0], 'end_station']
         this_direction = np.sign(next_station - this_station)
-        this_round[int(this_station) - 1] = this_element
-        i+=1
         if flag and this_direction != last_direction:
+            min_time = line57_onebus_temp.loc[aggregate_station_list[i-1][-1], 'trans_time']
+            max_time = line57_onebus_temp.loc[next_element[0], 'trans_time']
+            divide = sum(line57_onebus_temp.loc[this_element, 'trans_time']<= (min_time+max_time)/2.)
+            last_this_round = this_element[:divide]
+            first_next_round = this_element[divide:]
+            this_round[int(this_station) - 1] = last_this_round
+            first_next_station = this_station
+            i += 1
             break
-        if this_direction == 1 and this_station == max_station:
-            break
-        if this_direction == -1 and this_station == 1:
-            break
+        this_round[int(this_station) - 1] = this_element
+        i += 1
         last_direction = this_direction
         flag = True
     total_round.append(this_round)
     round_direction_list.append(last_direction)
+
+
+# plot to verify
+plt.figure()
+for round in total_round:
+    one_round = list(itertools.chain.from_iterable(round))
+    plt.scatter(line57_onebus_temp.loc[one_round,'trans_time'], line57_onebus_temp.loc[one_round,'end_station'])
+    plt.plot(line57_onebus_temp.loc[one_round, 'trans_time'], line57_onebus_temp.loc[one_round, 'end_station'],alpha=0.2,color='black')
+plt.show()
+
 
 
 
