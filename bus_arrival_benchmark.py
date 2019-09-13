@@ -83,13 +83,12 @@ for j in range(line57_onebus_temp.shape[0]):
         if j+1 < line57_onebus_temp.shape[0]:
             next_station = line57_onebus_temp.iloc[j+1]['end_station']
             if last_station == next_station:
+                # if we find error in station record, i.e. station i, station i+1, station i, then we make correction
                 line57_onebus_temp.iloc[j]['end_station'] = last_station
                 continue
         aggregate_station_list.append(record_index_list)
         record_index_list = [line57_onebus_temp.index[j]]
         last_station = this_station
-# notice there is error in station record, we first fix deviated station
-
 
 
 # step 2. detect round information
@@ -98,7 +97,6 @@ for j in range(line57_onebus_temp.shape[0]):
 # then initialize an array with the first element being the direction,
 # others being the matched index in aggregate station table
 total_round = list()
-
 round_direction_list = list()
 num_station_in_record = len(aggregate_station_list)
 i = 0
@@ -123,6 +121,8 @@ while True:
         next_station = line57_onebus_temp.loc[next_element[0], 'end_station']
         this_direction = np.sign(next_station - this_station)
         if flag and this_direction != last_direction:
+            # if the direction is not same, it indicated that we need a different round
+            # we split the end/start station according to their time distance to last round or next round record
             min_time = line57_onebus_temp.loc[aggregate_station_list[i-1][-1], 'trans_time']
             max_time = line57_onebus_temp.loc[next_element[0], 'trans_time']
             divide = sum(line57_onebus_temp.loc[this_element, 'trans_time']<= (min_time+max_time)/2.)
@@ -139,12 +139,31 @@ while True:
     total_round.append(this_round)
     round_direction_list.append(last_direction)
 
+# step 3. merge possibly round trip
+ind = 0
+while ind+1 < len(total_round):
+    if round_direction_list[ind]!= round_direction_list[ind+1]:
+        ind += 1
+        continue
+    #print('one possible')
+    this_round_filled = [not (not (station)) for station in total_round[ind]]
+    next_round_filled = [not (not (station)) for station in total_round[ind + 1]]
+    common_station = sum([this_round_filled[i] and next_round_filled[i] for i in range(len(this_round_filled))])
+    if common_station <= 3:
+        new_round = [ total_round[ind][i] + total_round[ind+1][i] for i in range(max_station)]
+        total_round[ind] = new_round
+        del total_round[ind+1]
+        del round_direction_list[ind+1]
+        #print('one element del')
+    else:
+        ind+=1
 
 # plot to verify
 plt.figure()
-for round in total_round:
+for ind,round in enumerate(total_round):
     one_round = list(itertools.chain.from_iterable(round))
     plt.scatter(line57_onebus_temp.loc[one_round,'trans_time'], line57_onebus_temp.loc[one_round,'end_station'])
+    plt.text(line57_onebus_temp.loc[one_round[0],'trans_time'], line57_onebus_temp.loc[one_round[0],'end_station'], str(round_direction_list[ind]>0))
     plt.plot(line57_onebus_temp.loc[one_round, 'trans_time'], line57_onebus_temp.loc[one_round, 'end_station'],alpha=0.2,color='black')
 plt.show()
 
