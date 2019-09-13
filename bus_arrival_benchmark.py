@@ -146,16 +146,45 @@ for ind_round, round in enumerate(total_round):
         round_passenger_number[real_key] = s
     number_passenger_record.append(round_passenger_number)
 # step 5. estimate arrival time (using only current data) for each station using empirical formula
-
-# step 6. calculate historical data for this line
+# setting the time range for outliers and record clustering
+delta1 = 72 # threshold for outlier
+delta2 = 5 # threshold for clustering
+seat_number = 58 # this number is according to baike.baidu.com<<<<<<<<<<<<<<<<!!!!!!!
+arrival_time_record = np.zeros((len(total_round), max_station))
+i_val_record = np.zeros((len(total_round), max_station))
+j_val_record = np.zeros((len(total_round), max_station))
+for round_ind, round in enumerate(total_round):
+    for station_ind, station in enumerate(round):
+        time_sequence = line57_onebus_temp.loc[station, 'trans_time'].values
+        current_i = len(station)
+        if current_i == 0:
+            continue
+        tl = time_sequence[-1]
+        while True:
+            lag_judge = [time_sequence[i]-time_sequence[i+1]<=delta1 for i in range(len(time_sequence)-1)]
+            if sum(lag_judge) >= len(lag_judge):
+                break
+            time_sequence = time_sequence[lag_judge]
+        lag_judge = [time_sequence[i] - time_sequence[i + 1] <= delta2 for i in range(len(time_sequence)-1)]
+        current_j = sum(lag_judge)
+        if current_i>2:
+            if current_j>=3:
+                arrival_time_record[round_ind, station_ind] = tl - (1.17*current_j-2.27)
+            else:
+                Nm = 1.*number_passenger_record[round_ind][station_ind]/seat_number
+                arrival_time_record[round_ind, station_ind] = tl -(-15.59*Nm+63.63*Nm-68.)
+        j_val_record[round_ind, station_ind] = current_j
+        i_val_record[round_ind, station_ind] = current_i
+#step 6. calculate historical data for this line
 
 # plot to verify
 plt.figure()
 for ind,round in enumerate(total_round):
     one_round = list(itertools.chain.from_iterable(round))
-    plt.scatter(line57_onebus_temp.loc[one_round,'trans_time'], line57_onebus_temp.loc[one_round,'end_station'])
+    plt.scatter(line57_onebus_temp.loc[one_round,'trans_time'], line57_onebus_temp.loc[one_round,'end_station'],marker='+',alpha=0.5)
+    plt.scatter(arrival_time_record[ind],range(1,max_station+1),marker='*')
     plt.text(line57_onebus_temp.loc[one_round[0],'trans_time'], line57_onebus_temp.loc[one_round[0],'end_station'], str(round_direction_list[ind]>0))
-    plt.plot(line57_onebus_temp.loc[one_round, 'trans_time'], line57_onebus_temp.loc[one_round, 'end_station'],alpha=0.2,color='black')
+    #plt.plot(line57_onebus_temp.loc[one_round, 'trans_time'], line57_onebus_temp.loc[one_round, 'end_station'],alpha=0.2,color='black')
 plt.show()
 
 
@@ -166,20 +195,6 @@ plt.show()
 
 
 
-
-'''
-# then we find outliers and cluster
-delta1 = 72
-delta2 = 5
-
-station_i = np.zeros(len(aggregate_station_list))
-station_j = np.zeros(len(aggregate_station_list))
-
-for ind, element in enumerate(aggregate_station_list):
-    this_station = line57_onebus_temp.loc[element[0],'end_station']
-    if ind+1<len(aggregate_station_list):
-        0
-'''
 
 
 # then we calculate potential direction of each element
