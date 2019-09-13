@@ -5,49 +5,7 @@ import numpy as np
 from sklearn.preprocessing import LabelEncoder
 import itertools
 
-
-def find_max_count(cnx):
-    # first we select the line with most record
-    sql_rank_trans_count = """
-    select count(*) as count_line_record, line_id
-    from ic_record
-    group by line_id
-    order by count_line_record DESC
-    """
-    line_count = pd.read_sql(sql_rank_trans_count, cnx)
-    line_count['line_id'] = line_count['line_id'] // 10
-    line_merged = line_count.groupby('line_id').sum()
-    line_merged.sort_values('count_line_record', ascending=False, inplace=True)
-    print('the top 5 line is:')
-    print(line_merged.index[:5])
-    # after this we found that top line is (1,57,52,890,52300,...)
-    return line_merged
-
-
-def plot_record(cnx, line_id=57):
-    # we can plot the arrival and departure record
-    sql_select2 = """
-        select trans_time, trans_date, start_station, end_station, bus_id
-        from ic_record
-        where (line_id = {0}0 or line_id = {0}1)
-        and trans_date = 20180601
-        """.format(line_id)
-    line57_record = pd.read_sql(sql_select2, cnx)
-    line57_record['trans_time'] = (line57_record['trans_date'] - 20180601) * 24 * 3600 + line57_record[
-        'trans_time'] // 10000 * 3600 + (line57_record['trans_time'] % 10000) // 100 * 60 + line57_record[
-                                      'trans_time'] % 100
-    le = LabelEncoder()
-    line57_record['bus_unique'] = le.fit_transform(line57_record['bus_id'])
-    for i in le.classes_[:5]:
-        line57_onebus = line57_record.loc[line57_record['bus_id'] == i]
-        line57_onebus = line57_onebus.sort_values('trans_time')
-        plt.scatter(line57_onebus['trans_time'], line57_onebus['end_station'], alpha=0.1, label=i)
-        plt.plot(line57_onebus['trans_time'], line57_onebus['end_station'], alpha=0.1)
-    plt.legend()
-    plt.show()
-    return
-
-
+# initialize sql connector
 cnx = mysql.connector.connect(user='root', password='a2=b2=c2', database='beijing_bus_liuliqiao')
 line_id = 57
 sql_select_line57 = """
@@ -56,6 +14,8 @@ sql_select_line57 = """
         where line_id = {0}0 or line_id = {0}1
 """.format(line_id)
 line57_record = pd.read_sql(sql_select_line57, cnx)
+cnx.close()
+# preprocess time data: convert yyyymmdd HHMMSS to integer: seconds from 20180601 00:00:00
 line57_record['trans_time'] = (line57_record['trans_date'] - 20180601) * 24 * 3600 + line57_record[
     'trans_time'] // 10000 * 3600 + (line57_record['trans_time'] % 10000) // 100 * 60 + line57_record[
                                   'trans_time'] % 100
@@ -89,8 +49,6 @@ for j in range(line57_onebus_temp.shape[0]):
         aggregate_station_list.append(record_index_list)
         record_index_list = [line57_onebus_temp.index[j]]
         last_station = this_station
-
-
 # step 2. detect round information
 # for the first element, if we have direction information, then we can construct one round and match direction
 # otherwise, detect next 2 elements to see if there is a trend
@@ -138,7 +96,6 @@ while True:
         flag = True
     total_round.append(this_round)
     round_direction_list.append(last_direction)
-
 # step 3. merge possibly round trip
 ind = 0
 while ind+1 < len(total_round):
@@ -157,6 +114,40 @@ while ind+1 < len(total_round):
         #print('one element del')
     else:
         ind+=1
+# step 4. figure out number of boarding and alighting for each round
+alighting_record = []
+boarding_record = []
+valid_alighting_record = []
+number_passenger_record = []
+for ind_round, round in enumerate(total_round):
+    round_alighting = np.zeros(max_station)
+    round_valid_alighting = np.zeros(max_station)
+    round_boarding = np.zeros(max_station)
+    round_passenger_number = np.zeros(max_station)
+    for key, station in enumerate(round):
+        round_alighting[key] += len(station)
+        for record in station:
+            start_station = line57_onebus_temp.loc[record, 'start_station']
+            if round_direction_list[ind_round]*np.sign(1.*key+1. - start_station)>0 and start_station>0 and start_station <= max_station:
+                round_boarding[int(start_station)-1] += 1
+                round_valid_alighting[key]+=1
+    alighting_record.append(round_alighting)
+    boarding_record.append(round_boarding)
+    valid_alighting_record.append(round_valid_alighting)
+    # calculate passenger number on board at each station for each round
+    s = 0
+    for key in range(len(round)):
+        if round_direction_list[ind_round]>0:
+            real_key = key
+        else:
+            real_key = len(round)-1-key
+        s += round_boarding[real_key]
+        s -= round_valid_alighting[real_key]
+        round_passenger_number[real_key] = s
+    number_passenger_record.append(round_passenger_number)
+# step 5. estimate arrival time (using only current data) for each station using empirical formula
+
+# step 6. calculate historical data for this line
 
 # plot to verify
 plt.figure()
@@ -198,4 +189,4 @@ for ind, element in enumerate(aggregate_station_list):
 
 
 
-cnx.close()
+
