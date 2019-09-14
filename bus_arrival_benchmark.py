@@ -15,17 +15,6 @@ sql_select_line57 = """
 """.format(line_id)
 line57_record = pd.read_sql(sql_select_line57, cnx)
 cnx.close()
-# preprocess time data: convert yyyymmdd HHMMSS to integer: seconds from 20180601 00:00:00
-line57_record['trans_time'] = (line57_record['trans_date'] - 20180601) * 24 * 3600 + line57_record[
-    'trans_time'] // 10000 * 3600 + (line57_record['trans_time'] % 10000) // 100 * 60 + line57_record[
-                                  'trans_time'] % 100
-le = LabelEncoder()
-line57_record['bus_unique'] = le.fit_transform(line57_record['bus_id'])
-station_unique = line57_record['end_station'].unique()
-max_station = station_unique.max()
-i = 0
-line57_onebus = line57_record.loc[line57_record['bus_unique'] == i]
-line57_onebus_temp = line57_onebus.sort_values('trans_time').drop(['bus_id', 'bus_unique'], axis=1)
 
 
 def aggregate_record_station(line57_onebus_temp):
@@ -213,19 +202,33 @@ def analysis_one_bus(line57_onebus_temp, max_station):
     # step 5. estimate arrival time (using only current data) for each station using empirical formula
     arrival_time_record, i_val_record, j_val_record = estimate_arrival_time_local(total_round, line57_onebus_temp,
                                                                                   number_passenger_record, max_station)
-    print('this bus done'+'='*50)
-    # step 6. calculate historical data for this line
+    print('this bus done' + '=' * 50)
+    return total_round, round_direction_list, number_passenger_record, arrival_time_record, i_val_record, j_val_record
+
+
+# preprocess time data: convert yyyymmdd HHMMSS to integer: seconds from 20180601 00:00:00
+line57_record['trans_time'] = (line57_record['trans_date'] - 20180601) * 24 * 3600 + line57_record[
+    'trans_time'] // 10000 * 3600 + (line57_record['trans_time'] % 10000) // 100 * 60 + line57_record[
+                                  'trans_time'] % 100
+le = LabelEncoder()
+line57_record['bus_unique'] = le.fit_transform(line57_record['bus_id'])
+station_unique = line57_record['end_station'].unique()
+max_station = station_unique.max()
+plt.figure()
+for i in range(3):
+    line57_onebus = line57_record.loc[line57_record['bus_unique'] == i]
+    line57_onebus_temp = line57_onebus.sort_values('trans_time').drop(['bus_id', 'bus_unique'], axis=1)
+    print('start analysis of bus {0}, bus id{1}'.format(i, le.classes_[i]), '--' * 50)
+    total_round, round_direction_list, number_passenger_record, arrival_time_record, i_val_record, j_val_record = analysis_one_bus(
+        line57_onebus_temp, max_station)
     # plot to verify
-    plt.figure()
     for ind, round in enumerate(total_round):
         one_round = list(itertools.chain.from_iterable(round))
-        plt.scatter(line57_onebus_temp.loc[one_round, 'trans_time'], line57_onebus_temp.loc[one_round, 'end_station'],
-                    marker='+', alpha=0.5)
-        plt.scatter(arrival_time_record[ind], range(1, max_station + 1), marker='*')
-        plt.text(line57_onebus_temp.loc[one_round[0], 'trans_time'],
-                 line57_onebus_temp.loc[one_round[0], 'end_station'], str(round_direction_list[ind] > 0))
+        # plt.scatter(line57_onebus_temp.loc[one_round, 'trans_time'], line57_onebus_temp.loc[one_round, 'end_station'],
+        #            marker='+', alpha=0.5)
+        plt.scatter(arrival_time_record[ind], range(1, max_station + 1))
+        # plt.text(line57_onebus_temp.loc[one_round[0], 'trans_time'],
+        #         line57_onebus_temp.loc[one_round[0], 'end_station'], str(round_direction_list[ind] > 0))
         # plt.plot(line57_onebus_temp.loc[one_round, 'trans_time'], line57_onebus_temp.loc[one_round, 'end_station'],alpha=0.2,color='black')
-    plt.show()
-
-
-analysis_one_bus(line57_onebus_temp, max_station)
+#plt.legend()
+plt.show()
