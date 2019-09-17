@@ -6,6 +6,7 @@ from sklearn.preprocessing import LabelEncoder
 import itertools
 
 # initialize sql connector
+print('getting sql data')
 cnx = mysql.connector.connect(user='root', password='a2=b2=c2', database='beijing_bus_liuliqiao')
 line_id = 57
 sql_select_line57 = """
@@ -15,7 +16,7 @@ sql_select_line57 = """
 """.format(line_id)
 line57_record = pd.read_sql(sql_select_line57, cnx)
 cnx.close()
-
+print('database connection closed')
 
 def aggregate_record_station(line57_onebus_temp):
     # step 1. aggregate record index into aggregate station table
@@ -155,6 +156,37 @@ def passenger_number_count(total_round, round_direction_list, line57_onebus_temp
     return alighting_record, boarding_record, valid_alighting_record, number_passenger_record
 
 
+class Round:
+    def __init__(self, bus_id, direction, i_val_round, j_val_round, arrival_time_round, number_passenger_round):
+        self.bus_id = bus_id
+        self.direction = direction
+        self.i_val_round = i_val_round
+        self.j_val_round = j_val_round
+        self.arrival_time_round = arrival_time_round
+        self.number_passenger_round = number_passenger_round
+        self.round_last_time = arrival_time_round.max()
+        # we will also use
+        # 1. weekdays
+        # 2. time of the day (approximated)
+        # as known features
+
+
+    def __lt__(self, other):
+        if self.direction < other.direction:
+            return True
+        elif self.round_last_time < other.round_last_time:
+            return True
+        return False
+
+    def __str__(self):
+        s0 = """
+        bus_id = {self.bus_id}
+        direction = {self.direction}
+        arrival_time_estimated = {self.arrival_time_round}
+        """.format(self=self)
+        return s0
+
+
 def estimate_arrival_time_local(total_round, line57_onebus_temp, number_passenger_record, max_station):
     # setting the time range for outliers and record clustering
     print('start benchmark local arrival time estimation')
@@ -162,6 +194,7 @@ def estimate_arrival_time_local(total_round, line57_onebus_temp, number_passenge
     delta2 = 5  # threshold for clustering
     seat_number = 58  # this number is according to baike.baidu.com<<<<<<<<<<<<<<<<!!!!!!!
     arrival_time_record = np.zeros((len(total_round), max_station))
+    # arrival time record is a round*station matrix <double>, this matrix records all inferred station-time information
     i_val_record = np.zeros((len(total_round), max_station))
     j_val_record = np.zeros((len(total_round), max_station))
     for round_ind, round in enumerate(total_round):
@@ -203,7 +236,7 @@ def analysis_one_bus(line57_onebus_temp, max_station):
     arrival_time_record, i_val_record, j_val_record = estimate_arrival_time_local(total_round, line57_onebus_temp,
                                                                                   number_passenger_record, max_station)
     print('this bus done' + '=' * 50)
-    return total_round, round_direction_list, number_passenger_record, arrival_time_record, i_val_record, j_val_record
+    return round_direction_list, number_passenger_record, arrival_time_record, i_val_record, j_val_record
 
 
 # preprocess time data: convert yyyymmdd HHMMSS to integer: seconds from 20180601 00:00:00
@@ -214,21 +247,32 @@ le = LabelEncoder()
 line57_record['bus_unique'] = le.fit_transform(line57_record['bus_id'])
 station_unique = line57_record['end_station'].unique()
 max_station = station_unique.max()
-plt.figure()
+# plt.figure()
+forward_round_info = []
+backward_round_info = []
 for i in range(3):
     line57_onebus = line57_record.loc[line57_record['bus_unique'] == i]
+    bus_id = le.classes_[i]
     line57_onebus_temp = line57_onebus.sort_values('trans_time').drop(['bus_id', 'bus_unique'], axis=1)
     print('start analysis of bus {0}, bus id{1}'.format(i, le.classes_[i]), '--' * 50)
-    total_round, round_direction_list, number_passenger_record, arrival_time_record, i_val_record, j_val_record = analysis_one_bus(
+    round_direction_list, number_passenger_record, arrival_time_record, i_val_record, j_val_record = analysis_one_bus(
         line57_onebus_temp, max_station)
-    # plot to verify
-    for ind, round in enumerate(total_round):
-        one_round = list(itertools.chain.from_iterable(round))
-        # plt.scatter(line57_onebus_temp.loc[one_round, 'trans_time'], line57_onebus_temp.loc[one_round, 'end_station'],
-        #            marker='+', alpha=0.5)
-        plt.scatter(arrival_time_record[ind], range(1, max_station + 1))
-        # plt.text(line57_onebus_temp.loc[one_round[0], 'trans_time'],
-        #         line57_onebus_temp.loc[one_round[0], 'end_station'], str(round_direction_list[ind] > 0))
-        # plt.plot(line57_onebus_temp.loc[one_round, 'trans_time'], line57_onebus_temp.loc[one_round, 'end_station'],alpha=0.2,color='black')
-#plt.legend()
-plt.show()
+    # decompose each element and store them into different objects
+    for j in range(len(round_direction_list)):
+        # print(arrival_time_record[j])
+        if arrival_time_record[j].sum() == 0:
+            continue
+
+        round_j = Round(bus_id, round_direction_list[j], i_val_record[j], j_val_record[j], arrival_time_record[j],
+                        number_passenger_record[j])
+        if round_j.direction>0:
+            forward_round_info.append(round_j)
+        else:
+            backward_round_info.append(round_j)
+
+print('sorting different record into forward record and backward record')
+forward_round_info.sort()
+backward_round_info.sort()
+
+# plt.legend()
+# plt.show()
