@@ -7,8 +7,8 @@ import itertools
 
 # initialize sql connector
 print('getting sql data')
-cnx = mysql.connector.connect(user='root', password='a2=b2=c2', database='beijing_bus_liuliqiao')
-line_id = 57
+cnx = mysql.connector.connect(user='root', password='', database='beijing_bus_liuliqiao')
+line_id = 57 # this line got second most records
 sql_select_line57 = """
         select trans_time, trans_date, start_station, start_time, end_station, bus_id
         from ic_record
@@ -20,7 +20,7 @@ print('database connection closed')
 
 def aggregate_record_station(line57_onebus_temp):
     # step 1. aggregate record index into aggregate station table
-    # for each middle station, we get one tuple of record index; for each start or end station, we get two tuples
+    # for each middle station, we get one list of record index
     # each element is a list[[record_index_list]]
     print('start aggregating record into station')
     last_station = line57_onebus_temp.iloc[0]['end_station']
@@ -46,10 +46,7 @@ def aggregate_record_station(line57_onebus_temp):
 
 def detect_round_info(aggregate_station_list, line57_onebus_temp, max_station):
     # step 2. detect round information
-    # for the first element, if we have direction information, then we can construct one round and match direction
-    # otherwise, detect next 2 elements to see if there is a trend
-    # then initialize an array with the first element being the direction,
-    # others being the matched index in aggregate station table
+    # if the direction changed, a new round starts, otherwise append record to current round
     print('start round decomposing')
     total_round = list()
     round_direction_list = list()
@@ -64,7 +61,6 @@ def detect_round_info(aggregate_station_list, line57_onebus_temp, max_station):
         if first_next_station < 900:
             this_round[int(first_next_station) - 1] = first_next_round
         flag = False
-        flag_next2 = False
         while True:
             first_next_station = 999
             first_next_round = []
@@ -98,6 +94,8 @@ def detect_round_info(aggregate_station_list, line57_onebus_temp, max_station):
 
 def merge_one_round(total_round, round_direction_list, max_station):
     # step 3. merge possibly round trip
+    # because some data point has error station information, some rounds are split into different rounds
+    # here we merge two rounds if they have the same direction and
     print('start round merging')
     ind = 0
     while ind + 1 < len(total_round):
@@ -160,16 +158,15 @@ class Round:
     def __init__(self, bus_id, direction, i_val_round, j_val_round, arrival_time_round, number_passenger_round):
         self.bus_id = bus_id
         self.direction = direction
-        self.i_val_round = i_val_round
-        self.j_val_round = j_val_round
-        self.arrival_time_round = arrival_time_round
-        self.number_passenger_round = number_passenger_round
-        self.round_last_time = arrival_time_round.max()
+        self.i_val_round = i_val_round # total number of passengers alighting at this station
+        self.j_val_round = j_val_round # total number of aggregated passengers
+        self.arrival_time_round = arrival_time_round # estimated arrival time
+        self.number_passenger_round = number_passenger_round # total of passenger on board at this station
+        self.round_last_time = arrival_time_round.max() # the last valid estimated arrival
         # we will also use
         # 1. weekdays
-        # 2. time of the day (approximated)
+        # 2. weather? holidays?.....
         # as known features
-
 
     def __lt__(self, other):
         if self.direction < other.direction:
@@ -262,7 +259,6 @@ for i in range(3):
         # print(arrival_time_record[j])
         if arrival_time_record[j].sum() == 0:
             continue
-
         round_j = Round(bus_id, round_direction_list[j], i_val_record[j], j_val_record[j], arrival_time_record[j],
                         number_passenger_record[j])
         if round_j.direction>0:
@@ -271,6 +267,9 @@ for i in range(3):
             backward_round_info.append(round_j)
 
 print('sorting different record into forward record and backward record')
+# forward_round_info is a list of Round objects
+# each Round object has estimated arrival time at each station
+# if there is no estimation, it will be 0
 forward_round_info.sort()
 backward_round_info.sort()
 
