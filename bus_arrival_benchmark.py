@@ -7,7 +7,7 @@ import itertools
 
 # initialize sql connector
 print('getting sql data')
-cnx = mysql.connector.connect(user='root', password='', database='beijing_bus_liuliqiao')
+cnx = mysql.connector.connect(user='root', password='a2=b2=c2', database='beijing_bus_liuliqiao')
 line_id = 57 # this line got second most records
 sql_select_line57 = """
         select trans_time, trans_date, start_station, start_time, end_station, bus_id
@@ -236,6 +236,50 @@ def analysis_one_bus(line57_onebus_temp, max_station):
     return round_direction_list, number_passenger_record, arrival_time_record, i_val_record, j_val_record
 
 
+def matrix_with_missing_construction(round_info):
+    row_num = len(round_info)
+    col_num = len(round_info[0].arrival_time_round)
+    M = np.zeros((row_num,col_num))
+    for i in range(row_num):
+        M[i] = round_info[i].arrival_time_round
+    return M
+
+def benchmark_matrix_filling(round_info, threshold=30*60, forward=True):
+    for ind_round, round in enumerate(round_info):
+        neighbor_round = []
+        previous_round_ind = ind_round -1
+        after_round_ind = ind_round + 1
+        while previous_round_ind>=0:
+            if round.round_last_time - round_info[previous_round_ind].round_last_time>threshold:
+                break
+            neighbor_round.append(previous_round_ind)
+            previous_round_ind-=1
+
+        while after_round_ind < len(round_info):
+            if round_info[after_round_ind].round_last_time - round.round_last_time> threshold:
+                break
+            neighbor_round.append(after_round_ind)
+            after_round_ind+=1
+
+        for ind_station in range(len(round.arrival_time_round)-1):
+            if forward:
+                true_ind_station = ind_station
+                direction = 1
+            else:
+                true_ind_station = len(round.arrival_time_round) - 1 - ind_station
+                direction = -1
+            if round.arrival_time_round[true_ind_station]<=0. or round.arrival_time_round[true_ind_station+direction]>0.:
+                continue
+            neighbor_record = []
+            for possible_round_ind in neighbor_round:
+                neighbor_this = round_info[possible_round_ind].arrival_time_round[true_ind_station]
+                neighbor_next = round_info[possible_round_ind].arrival_time_round[true_ind_station+direction]
+                if neighbor_this>0 and neighbor_next>0:
+                    neighbor_record.append(neighbor_next-neighbor_this)
+            if len(neighbor_record)>0:
+                round_info[ind_round].arrival_time_round[true_ind_station+direction] = round.arrival_time_round[true_ind_station] + sum(neighbor_record)/len(neighbor_record)
+    return round_info
+
 # preprocess time data: convert yyyymmdd HHMMSS to integer: seconds from 20180601 00:00:00
 line57_record['trans_time'] = (line57_record['trans_date'] - 20180601) * 24 * 3600 + line57_record[
     'trans_time'] // 10000 * 3600 + (line57_record['trans_time'] % 10000) // 100 * 60 + line57_record[
@@ -266,12 +310,20 @@ for i in range(3):
         else:
             backward_round_info.append(round_j)
 
+
 print('sorting different record into forward record and backward record')
 # forward_round_info is a list of Round objects
 # each Round object has estimated arrival time at each station
 # if there is no estimation, it will be 0
 forward_round_info.sort()
 backward_round_info.sort()
+
+M = matrix_with_missing_construction(forward_round_info)
+print(np.count_nonzero(M))
+forward_round_info = benchmark_matrix_filling(forward_round_info)
+M1 = matrix_with_missing_construction(forward_round_info)
+print(np.count_nonzero(M1))
+
 
 # plt.legend()
 # plt.show()
