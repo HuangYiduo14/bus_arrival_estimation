@@ -7,7 +7,7 @@ import itertools
 
 # initialize sql connector
 print('getting sql data')
-cnx = mysql.connector.connect(user='root', password='a2=b2=c2', database='beijing_bus_liuliqiao')
+cnx = mysql.connector.connect(user='root', password='', database='beijing_bus_liuliqiao')
 line_id = 57 # this line got second most records
 sql_select_line57 = """
         select trans_time, trans_date, start_station, start_time, end_station, bus_id
