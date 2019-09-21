@@ -206,41 +206,76 @@ def merge_one_round(df_round):
 
     return df_record
 
-def passenger_number_count(total_round, round_direction_list, line57_onebus_temp, max_station):
-    # step 4. figure out number of boarding and alighting for each round
-    print('start counting passenger')
-    alighting_record = []
-    boarding_record = []
-    valid_alighting_record = []
-    number_passenger_record = []
-    for ind_round, round in enumerate(total_round):
-        round_alighting = np.zeros(max_station)
-        round_valid_alighting = np.zeros(max_station)
-        round_boarding = np.zeros(max_station)
-        round_passenger_number = np.zeros(max_station)
-        for key, station in enumerate(round):
-            round_alighting[key] += len(station)
-            for record in station:
-                start_station = line57_onebus_temp.loc[record, 'start_station']
-                if round_direction_list[ind_round] * np.sign(
-                        1. * key + 1. - start_station) > 0 and start_station > 0 and start_station <= max_station:
-                    round_boarding[int(start_station) - 1] += 1
-                    round_valid_alighting[key] += 1
-        alighting_record.append(round_alighting)
-        boarding_record.append(round_boarding)
-        valid_alighting_record.append(round_valid_alighting)
-        # calculate passenger number on board at each station for each round
-        s = 0
-        for key in range(len(round)):
-            if round_direction_list[ind_round] > 0:
-                real_key = key
+# def passenger_number_count(total_round, round_direction_list, line57_onebus_temp, max_station):
+#     # step 4. figure out number of boarding and alighting for each round
+#     print('start counting passenger')
+#     alighting_record = []
+#     boarding_record = []
+#     valid_alighting_record = []
+#     number_passenger_record = []
+#     for ind_round, round in enumerate(total_round):
+#         round_alighting = np.zeros(max_station)
+#         round_valid_alighting = np.zeros(max_station)
+#         round_boarding = np.zeros(max_station)
+#         round_passenger_number = np.zeros(max_station)
+#         for key, station in enumerate(round):
+#             round_alighting[key] += len(station)
+#             for record in station:
+#                 start_station = line57_onebus_temp.loc[record, 'start_station']
+#                 if round_direction_list[ind_round] * np.sign(
+#                         1. * key + 1. - start_station) > 0 and start_station > 0 and start_station <= max_station:
+#                     round_boarding[int(start_station) - 1] += 1
+#                     round_valid_alighting[key] += 1
+#         alighting_record.append(round_alighting)
+#         boarding_record.append(round_boarding)
+#         valid_alighting_record.append(round_valid_alighting)
+#         # calculate passenger number on board at each station for each round
+#         s = 0
+#         for key in range(len(round)):
+#             if round_direction_list[ind_round] > 0:
+#                 real_key = key
+#             else:
+#                 real_key = len(round) - 1 - key
+#             s += round_boarding[real_key]
+#             s -= round_valid_alighting[real_key]
+#             round_passenger_number[real_key] = s
+#         number_passenger_record.append(round_passenger_number)
+#     return alighting_record, boarding_record, valid_alighting_record, number_passenger_record
+
+    def passenger_num_count(df_merge, max_station):
+        # step 4. figure out number of boarding and alighting for each round
+        df_record = df_merge.copy().reset_index(drop=1)
+        df_record['end_station'] = df_record['end_station'].astype(int)
+
+        df_pax_num = pd.DataFrame()
+        for r in range(1, df_record['round_id'].max()):
+            df_record_round = df_record[df_record['round_id'] == r]
+            round_board, round_alight = np.zeros(max_station + 1), np.zeros(max_station + 1)
+            is_pos_direction = df_record_round['direction'].min() == 1
+            # There might be some error in boarding data(e.g. start to end direction is not consistent with our
+            # pre-identified direction), in order to get a valid passenger number in future calculation,
+            # we rule out these bording information.
+            df_board = df_record_round[(df_record_round['start_station'] <= max_station)
+                                       & (df_record_round['start_station'] > 0)
+                                       & ((df_record_round['start_station'] < df_record_round[
+                'end_station']) == is_pos_direction)].groupby('start_station').count()['direction']
+            round_board[df_board.index.tolist()] = df_board.values
+
+            # All positive alighting data is kept. Thus, the passenger number will be overestimated
+            # and gives us a upper bound.
+            df_alight = df_record_round[df_record_round['end_station'] > 0].groupby('end_station').count()['direction']
+            round_alight[df_alight.index.tolist()] = df_alight.values
+
+            # Passenger number is calculated for different direction respectively in an inverse order.
+            if is_pos_direction:
+                round_pax_num = np.flip((np.flip(round_alight) - np.flip(round_board)).cumsum())
             else:
-                real_key = len(round) - 1 - key
-            s += round_boarding[real_key]
-            s -= round_valid_alighting[real_key]
-            round_passenger_number[real_key] = s
-        number_passenger_record.append(round_passenger_number)
-    return alighting_record, boarding_record, valid_alighting_record, number_passenger_record
+                round_pax_num = (round_alight - round_board).cumsum()
+            df_pax_num = df_pax_num.append(pd.DataFrame(
+                {'round_id': [r] * (max_station + 1), 'station_num': np.arange(max_station + 1),
+                 'direction': [2 * is_pos_direction - 1] * (max_station + 1), 'pax_num': round_pax_num}))
+
+        return df_pax_num
 
 
 class Round:
