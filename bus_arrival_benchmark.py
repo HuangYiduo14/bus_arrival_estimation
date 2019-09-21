@@ -18,79 +18,134 @@ line57_record = pd.read_sql(sql_select_line57, cnx)
 cnx.close()
 print('database connection closed')
 
-def aggregate_record_station(line57_onebus_temp):
-    # step 1. aggregate record index into aggregate station table
-    # for each middle station, we get one list of record index
-    # each element is a list[[record_index_list]]
-    print('start aggregating record into station')
-    last_station = line57_onebus_temp.iloc[0]['end_station']
-    record_index_list = list()
-    aggregate_station_list = list()
-    for j in range(line57_onebus_temp.shape[0]):
-        this_station = line57_onebus_temp.iloc[j]['end_station']
-        if last_station == this_station:
-            record_index_list.append(line57_onebus_temp.index[j])
-        else:
-            if j + 1 < line57_onebus_temp.shape[0]:
-                next_station = line57_onebus_temp.iloc[j + 1]['end_station']
-                if last_station == next_station:
-                    # if we find error in station record, i.e. station i, station i+1, station i, then we make correction
-                    line57_onebus_temp.iloc[j]['end_station'] = last_station
-                    continue
-            # if we find that station is truly different, append current record_list and reinitialize record_list
-            aggregate_station_list.append(record_index_list)
-            record_index_list = [line57_onebus_temp.index[j]]
-            last_station = this_station
-    return aggregate_station_list
+# def aggregate_record_station(line57_onebus_temp):
+#     # step 1. aggregate record index into aggregate station table
+#     # for each middle station, we get one list of record index
+#     # each element is a list[[record_index_list]]
+#     print('start aggregating record into station')
+#     last_station = line57_onebus_temp.iloc[0]['end_station']
+#     record_index_list = list()
+#     aggregate_station_list = list()
+#     for j in range(line57_onebus_temp.shape[0]):
+#         this_station = line57_onebus_temp.iloc[j]['end_station']
+#         if last_station == this_station:
+#             record_index_list.append(line57_onebus_temp.index[j])
+#         else:
+#             if j + 1 < line57_onebus_temp.shape[0]:
+#                 next_station = line57_onebus_temp.iloc[j + 1]['end_station']
+#                 if last_station == next_station:
+#                     # if we find error in station record, i.e. station i, station i+1, station i, then we make correction
+#                     line57_onebus_temp.iloc[j]['end_station'] = last_station
+#                     continue
+#             # if we find that station is truly different, append current record_list and reinitialize record_list
+#             aggregate_station_list.append(record_index_list)
+#             record_index_list = [line57_onebus_temp.index[j]]
+#             last_station = this_station
+#     return aggregate_station_list
 
 
-def detect_round_info(aggregate_station_list, line57_onebus_temp, max_station):
+def aggregate_record_station(df_temp):
+    # step 1. aggregate consecutive end station and calibrate invalid data
+    df_record = df_temp.copy().reset_index(drop=1)
+
+    # is_new_station indicates whether the current record is the first passenger alighting at the station.
+    # Initialized with all ones.
+    df_record['is_new_station'] = 1
+    # 1. If current station is the same as the last record, then set is_new_station to 0.
+    df_record.loc[df_record['end_station'] == df_record['end_station'].shift(1), 'is_new_station'] = 0
+    # 2. If the last station and the next station is the same, then this record is considered invalid.
+    #    Set is_new_station to 0 and calibrate this record.
+    df_record.loc[df_record['end_station'].shift(-1) == df_record['end_station'].shift(1), 'is_new_station'] = 0
+    df_record.loc[df_record['is_new_station'] == 0, 'end_station'] = np.nan
+    df_record = df_record.fillna(method='ffill')
+
+    return df_record
+
+# def detect_round_info(aggregate_station_list, line57_onebus_temp, max_station):
+#     # step 2. detect round information
+#     # if the direction changed, a new round starts, otherwise append record to current round
+#     print('start round decomposing')
+#     total_round = list()
+#     round_direction_list = list()
+#     num_station_in_record = len(aggregate_station_list)
+#     i = 0
+#     first_next_round = []
+#     first_next_station = 999
+#     while True:
+#         if i + 1 >= num_station_in_record:
+#             break
+#         this_round = [[] for k in range(max_station)]
+#         if first_next_station < 900:
+#             this_round[int(first_next_station) - 1] = first_next_round
+#         flag = False
+#         while True:
+#             first_next_station = 999
+#             first_next_round = []
+#             if i + 1 >= num_station_in_record:
+#                 break
+#             this_element = aggregate_station_list[i]
+#             next_element = aggregate_station_list[i + 1]
+#             this_station = line57_onebus_temp.loc[this_element[0], 'end_station']
+#             next_station = line57_onebus_temp.loc[next_element[0], 'end_station']
+#             this_direction = np.sign(next_station - this_station)
+#             if flag and this_direction != last_direction:
+#                 # if the direction is not same, it indicated that we need a different round
+#                 # we split the end/start station according to their time distance to last round or next round record
+#                 min_time = line57_onebus_temp.loc[aggregate_station_list[i - 1][-1], 'trans_time']
+#                 max_time = line57_onebus_temp.loc[next_element[0], 'trans_time']
+#                 divide = sum(line57_onebus_temp.loc[this_element, 'trans_time'] <= (min_time + max_time) / 2.)
+#                 last_this_round = this_element[:divide]
+#                 first_next_round = this_element[divide:]
+#                 this_round[int(this_station) - 1] = last_this_round
+#                 first_next_station = this_station
+#                 i += 1
+#                 break
+#             this_round[int(this_station) - 1] = this_element
+#             i += 1
+#             last_direction = this_direction
+#             flag = True
+#         total_round.append(this_round)
+#         round_direction_list.append(last_direction)
+#     return total_round, round_direction_list
+
+def detect_round_info(df_agg_station):
     # step 2. detect round information
     # if the direction changed, a new round starts, otherwise append record to current round
-    print('start round decomposing')
-    total_round = list()
-    round_direction_list = list()
-    num_station_in_record = len(aggregate_station_list)
-    i = 0
-    first_next_round = []
-    first_next_station = 999
-    while True:
-        if i + 1 >= num_station_in_record:
-            break
-        this_round = [[] for k in range(max_station)]
-        if first_next_station < 900:
-            this_round[int(first_next_station) - 1] = first_next_round
-        flag = False
-        while True:
-            first_next_station = 999
-            first_next_round = []
-            if i + 1 >= num_station_in_record:
-                break
-            this_element = aggregate_station_list[i]
-            next_element = aggregate_station_list[i + 1]
-            this_station = line57_onebus_temp.loc[this_element[0], 'end_station']
-            next_station = line57_onebus_temp.loc[next_element[0], 'end_station']
-            this_direction = np.sign(next_station - this_station)
-            if flag and this_direction != last_direction:
-                # if the direction is not same, it indicated that we need a different round
-                # we split the end/start station according to their time distance to last round or next round record
-                min_time = line57_onebus_temp.loc[aggregate_station_list[i - 1][-1], 'trans_time']
-                max_time = line57_onebus_temp.loc[next_element[0], 'trans_time']
-                divide = sum(line57_onebus_temp.loc[this_element, 'trans_time'] <= (min_time + max_time) / 2.)
-                last_this_round = this_element[:divide]
-                first_next_round = this_element[divide:]
-                this_round[int(this_station) - 1] = last_this_round
-                first_next_station = this_station
-                i += 1
-                break
-            this_round[int(this_station) - 1] = this_element
-            i += 1
-            last_direction = this_direction
-            flag = True
-        total_round.append(this_round)
-        round_direction_list.append(last_direction)
-    return total_round, round_direction_list
+    df_record = df_agg_station.copy().reset_index(drop=1)
 
+    # Identify direction by comparing consecutive station sequence
+    l_new_station_ind = df_record.loc[(df_record['is_new_station']) == 1].index.tolist()
+    l_new_station = df_record.loc[l_new_station_ind, 'end_station'].values
+    df_record.loc[l_new_station_ind, 'direction'] = np.insert((l_new_station[1:] - l_new_station[:-1]), -1, np.nan)
+    df_record['direction'] = df_record['direction'].clip(lower=-1, upper=1)
+    # Detect the round shift station by back-and-forth filling, denoted by 0
+    df_record['prev_direction'] = df_record['direction'].fillna(method='ffill').fillna(method='bfill')
+    df_record['succ_direction'] = df_record['direction'].fillna(method='bfill').fillna(method='ffill')
+    df_record['direction'] = (df_record['prev_direction'] + df_record['succ_direction']) / 2
+    # Extract the exact first record before and after round shift
+    l_before_change = df_record[(
+                                    df_record['direction'].shift(-1) != 0) & (
+                                    df_record['direction'].shift(-2) == 0)].index.tolist()
+    l_after_change = df_record[(
+                                   df_record['direction'].shift(1) == 0) & (
+                                   df_record['direction'] != 0)].index.tolist()
+    # Calculate time difference and the spliting time
+    df_change = pd.DataFrame()
+    df_change['before_time'] = df_record.loc[l_before_change, 'trans_time'].reset_index(drop=1)
+    df_change['after_time'] = df_record.loc[l_after_change, 'trans_time'].reset_index(drop=1)
+    df_change['after_index'] = l_after_change
+    df_change['median_time'] = df_change[['before_time', 'after_time']].mean(axis=1)
+    # Find the exact record which starts a new round
+    l_change = df_change['median_time'].apply(lambda x: df_record[df_record['trans_time'] > x].index[0])
+    # Label the new record as a new station and fill all the other direction
+    df_record.loc[l_change.tolist(), 'direction'] = df_record.loc[
+        df_change['after_index'].tolist(), 'direction'].tolist()
+    df_record.loc[l_change.tolist(), 'is_new_station'] = 1
+    df_record.loc[df_record['direction'] == 0, 'direction'] = np.nan
+    df_record['direction'] = df_record['direction'].fillna(method='ffill')
+    df_record['is_new_round'] = (df_record['direction'].shift(1) != df_record['direction']).astype(int)
+
+    return df_record.drop(['prev_direction', 'succ_direction'], axis=1)
 
 def merge_one_round(total_round, round_direction_list, max_station):
     # step 3. merge possibly round trip
@@ -294,7 +349,7 @@ backward_round_info = []
 for i in range(3):
     line57_onebus = line57_record.loc[line57_record['bus_unique'] == i]
     bus_id = le.classes_[i]
-    line57_onebus_temp = line57_onebus.sort_values('trans_time').drop(['bus_id', 'bus_unique'], axis=1)
+    line57_onebus_temp = line57_onebus.sort_values('trans_time').reset_index(drop=1).drop(['bus_id', 'bus_unique'], axis=1)
     print('start analysis of bus {0}, bus id{1}'.format(i, le.classes_[i]), '--' * 50)
     round_direction_list, number_passenger_record, arrival_time_record, i_val_record, j_val_record = analysis_one_bus(
         line57_onebus_temp, max_station)
