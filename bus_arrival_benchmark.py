@@ -116,8 +116,17 @@ def detect_round_info(df_agg_station):
     # Identify direction by comparing consecutive station sequence
     l_new_station_ind = df_record.loc[(df_record['is_new_station']) == 1].index.tolist()
     l_new_station = df_record.loc[l_new_station_ind, 'end_station'].values
-    df_record.loc[l_new_station_ind, 'direction'] = np.insert((l_new_station[1:] - l_new_station[:-1]), -1, np.nan)
+    # Greedy method is used to determine whether choose post direction or pre direction
+    l_post_direction = l_new_station[1:] - l_new_station[:-1]
+    l_pre_direction = np.insert(l_post_direction, 0, np.nan)
+    df_record['skew_post'] = ((df_record['trans_time'].shift(-1) - df_record['trans_time']) < (
+    df_record['trans_time'] - df_record['trans_time'].shift(1)))
+    l_skew_post = df_record.loc[l_new_station_ind, 'skew_post'].tolist()
+    l_pre_direction[l_skew_post] = np.insert(l_post_direction, -1, np.nan)[l_skew_post]
+
+    df_record.loc[l_new_station_ind, 'direction'] = l_pre_direction
     df_record['direction'] = df_record['direction'].clip(lower=-1, upper=1)
+
     # Detect the round shift station by back-and-forth filling, denoted by 0
     df_record['prev_direction'] = df_record['direction'].fillna(method='ffill').fillna(method='bfill')
     df_record['succ_direction'] = df_record['direction'].fillna(method='bfill').fillna(method='ffill')
@@ -147,30 +156,55 @@ def detect_round_info(df_agg_station):
 
     return df_record.drop(['prev_direction', 'succ_direction'], axis=1)
 
-def merge_one_round(total_round, round_direction_list, max_station):
+# def merge_one_round(total_round, round_direction_list, max_station):
+#     # step 3. merge possibly round trip
+#     # because some data point has error station information, some rounds are split into different rounds
+#     # here we merge two rounds if they have the same direction and
+#     print('start round merging')
+#     ind = 0
+#     while ind + 1 < len(total_round):
+#         if round_direction_list[ind] != round_direction_list[ind + 1]:
+#             ind += 1
+#             continue
+#         # print('one possible')
+#         this_round_filled = [not (not (station)) for station in total_round[ind]]
+#         next_round_filled = [not (not (station)) for station in total_round[ind + 1]]
+#         common_station = sum([this_round_filled[i] and next_round_filled[i] for i in range(len(this_round_filled))])
+#         if common_station <= 3:
+#             new_round = [total_round[ind][i] + total_round[ind + 1][i] for i in range(max_station)]
+#             total_round[ind] = new_round
+#             del total_round[ind + 1]
+#             del round_direction_list[ind + 1]
+#             # print('one element del')
+#         else:
+#             ind += 1
+#     return total_round, round_direction_list
+
+def merge_one_round(df_round):
     # step 3. merge possibly round trip
     # because some data point has error station information, some rounds are split into different rounds
-    # here we merge two rounds if they have the same direction and
-    print('start round merging')
-    ind = 0
-    while ind + 1 < len(total_round):
-        if round_direction_list[ind] != round_direction_list[ind + 1]:
-            ind += 1
-            continue
-        # print('one possible')
-        this_round_filled = [not (not (station)) for station in total_round[ind]]
-        next_round_filled = [not (not (station)) for station in total_round[ind + 1]]
-        common_station = sum([this_round_filled[i] and next_round_filled[i] for i in range(len(this_round_filled))])
-        if common_station <= 3:
-            new_round = [total_round[ind][i] + total_round[ind + 1][i] for i in range(max_station)]
-            total_round[ind] = new_round
-            del total_round[ind + 1]
-            del round_direction_list[ind + 1]
-            # print('one element del')
-        else:
-            ind += 1
-    return total_round, round_direction_list
+    # here we merge some rounds which are really short and have no significant seperation from previous round.
+    df_record = df_round.copy().reset_index(drop=1)
 
+    # Find the start and end records for a proposed new round.
+    l_start_round = df_record[df_record['is_new_round'] == 1].index.tolist()
+    l_end_round = df_record[df_record['is_new_round'].shift(-1) == 1].index.tolist()
+    df_round_time = pd.DataFrame()
+    df_round_time['start_time'] = df_record.loc[l_start_round, 'trans_time'].reset_index(drop=1)
+    df_round_time['end_time'] = df_record.loc[l_end_round, 'trans_time'].reset_index(drop=1)
+    df_round_time['round_time'] = df_round_time['end_time'] - df_round_time['start_time']
+    df_round_time['gap_time'] = df_round_time['start_time'] - df_round_time['end_time'].shift(1)
+
+    # A valid merge requires the round is less than 10 min and has no significant seperation with the previous one.
+    l_valid_merge = (
+    (df_round_time['round_time'] < 600) & (df_round_time['gap_time'] < df_round_time['round_time'])).values
+    l_start_round, l_end_round = np.array(l_start_round)[l_valid_merge], np.array(l_end_round)[l_valid_merge[:-1]]
+    df_record.loc[l_start_round, 'is_new_round'] = 0
+
+    # Label each round.
+    df_record['round_id'] = df_record['is_new_round'].cumsum()
+
+    return df_record
 
 def passenger_number_count(total_round, round_direction_list, line57_onebus_temp, max_station):
     # step 4. figure out number of boarding and alighting for each round
