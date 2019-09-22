@@ -247,11 +247,10 @@ def merge_one_round(df_round):
         df_record = df_merge.copy().reset_index(drop=1)
         df_record['end_station'] = df_record['end_station'].astype(int)
 
-        df_pax_num = pd.DataFrame()
-        for r in range(1, df_record['round_id'].max()):
-            df_record_round = df_record[df_record['round_id'] == r]
+        def cal_pax_num(df_record_round):
             round_board, round_alight = np.zeros(max_station + 1), np.zeros(max_station + 1)
             is_pos_direction = df_record_round['direction'].min() == 1
+
             # There might be some error in boarding data(e.g. start to end direction is not consistent with our
             # pre-identified direction), in order to get a valid passenger number in future calculation,
             # we rule out these bording information.
@@ -265,16 +264,14 @@ def merge_one_round(df_round):
             # and gives us a upper bound.
             df_alight = df_record_round[df_record_round['end_station'] > 0].groupby('end_station').count()['direction']
             round_alight[df_alight.index.tolist()] = df_alight.values
-
             # Passenger number is calculated for different direction respectively in an inverse order.
             if is_pos_direction:
                 round_pax_num = np.flip((np.flip(round_alight) - np.flip(round_board)).cumsum())
             else:
                 round_pax_num = (round_alight - round_board).cumsum()
-            df_pax_num = df_pax_num.append(pd.DataFrame(
-                {'round_id': [r] * (max_station + 1), 'station_num': np.arange(max_station + 1),
-                 'direction': [2 * is_pos_direction - 1] * (max_station + 1), 'pax_num': round_pax_num}))
+            return pd.Series(round_pax_num)
 
+        df_pax_num = df_record.groupby('round_id').apply(lambda x: cal_pax_num(x))
         return df_pax_num
 
 
