@@ -7,7 +7,7 @@ import itertools
 
 # initialize sql connector
 print('getting sql data')
-cnx = mysql.connector.connect(user='root', password='', database='beijing_bus_liuliqiao')
+cnx = mysql.connector.connect(user='root', password='lsss1122.lyd', database='beijing_bus_liuliqiao')
 line_id = 57 # this line got second most records
 sql_select_line57 = """
         select trans_time, trans_date, start_station, start_time, end_station, bus_id
@@ -44,9 +44,10 @@ print('database connection closed')
 #     return aggregate_station_list
 
 
-def aggregate_record_station(df_temp):
+def aggregate_record_station(df):
     # step 1. aggregate consecutive end station and calibrate invalid data
-    df_record = df_temp.copy().reset_index(drop=1)
+    print('start aggregating record into station')
+    df_record = df.copy().reset_index(drop=1)
 
     # is_new_station indicates whether the current record is the first passenger alighting at the station.
     # Initialized with all ones.
@@ -108,10 +109,11 @@ def aggregate_record_station(df_temp):
 #         round_direction_list.append(last_direction)
 #     return total_round, round_direction_list
 
-def detect_round_info(df_agg_station):
+def detect_round_info(df):
     # step 2. detect round information
     # if the direction changed, a new round starts, otherwise append record to current round
-    df_record = df_agg_station.copy().reset_index(drop=1)
+    print('start round decomposing')
+    df_record = df.copy().reset_index(drop=1)
 
     # Identify direction by comparing consecutive station sequence
     l_new_station_ind = df_record.loc[(df_record['is_new_station']) == 1].index.tolist()
@@ -187,11 +189,12 @@ def detect_round_info(df_agg_station):
 #             ind += 1
 #     return total_round, round_direction_list
 
-def merge_one_round(df_round):
+def merge_one_round(df):
     # step 3. merge possibly round trip
     # because some data point has error station information, some rounds are split into different rounds
     # here we merge some rounds which are really short and have no significant seperation from previous round.
-    df_record = df_round.copy().reset_index(drop=1)
+    print('start round merging')
+    df_record = df.copy().reset_index(drop=1)
 
     # Find the start and end records for a proposed new round.
     l_start_round = df_record[df_record['is_new_round'] == 1].index.tolist()
@@ -249,12 +252,12 @@ def merge_one_round(df_round):
 #         number_passenger_record.append(round_passenger_number)
 #     return alighting_record, boarding_record, valid_alighting_record, number_passenger_record
 
-def passenger_num_count(df_merge, max_station):
+def passenger_num_count(df, max_station):
     # step 4. figure out number of boarding and alighting for each round
-    df_record = df_merge.copy().reset_index(drop=1)
-    df_record[['start_station', 'end_station']] = df_record[['start_station', 'end_station']].astype(int)
+    print('start counting passenger')
+    df_record = df.copy().reset_index(drop=1)
 
-    def cal_pax_num(df_record_round):
+    def cal_pax_num(df_record_round, max_station):
         round_board, round_alight = np.zeros(max_station + 1), np.zeros(max_station + 1)
         is_pos_direction = df_record_round['direction'].min() == 1
 
@@ -269,9 +272,10 @@ def passenger_num_count(df_merge, max_station):
             round_pax_num = np.flip((np.flip(round_alight) - np.flip(round_board)).cumsum())
         else:
             round_pax_num = (round_alight - round_board).cumsum()
-        return pd.Series(round_pax_num)
+        return pd.DataFrame(
+            {'end_station':range(1,max_station+1),'pax_num':round_pax_num[1:]}).set_index('end_station')
 
-    df_pax_num = df_record.groupby('round_id').apply(lambda x: cal_pax_num(x))
+    df_pax_num = df_record.groupby('round_id').apply(lambda x: cal_pax_num(x, max_station))
     return df_pax_num
 
 class Round:
@@ -304,58 +308,100 @@ class Round:
         return s0
 
 
-def estimate_arrival_time_local(total_round, line57_onebus_temp, number_passenger_record, max_station):
+# def estimate_arrival_time_local(total_round, line57_onebus_temp, number_passenger_record, max_station):
+#     # setting the time range for outliers and record clustering
+#     print('start benchmark local arrival time estimation')
+#     delta1 = 72  # threshold for outlier
+#     delta2 = 5  # threshold for clustering
+#     seat_number = 58  # this number is according to baike.baidu.com<<<<<<<<<<<<<<<<!!!!!!!
+#     arrival_time_record = np.zeros((len(total_round), max_station))
+#     # arrival time record is a round*station matrix <double>, this matrix records all inferred station-time information
+#     i_val_record = np.zeros((len(total_round), max_station))
+#     j_val_record = np.zeros((len(total_round), max_station))
+#     for round_ind, round in enumerate(total_round):
+#         for station_ind, station in enumerate(round):
+#             time_sequence = line57_onebus_temp.loc[station, 'trans_time'].values
+#             current_i = len(station)
+#             if current_i == 0:
+#                 continue
+#             tl = time_sequence[-1]
+#             while True:
+#                 lag_judge = [time_sequence[i] - time_sequence[i + 1] <= delta1 for i in range(len(time_sequence) - 1)]
+#                 if sum(lag_judge) >= len(lag_judge):
+#                     break
+#                 time_sequence = time_sequence[lag_judge]
+#             lag_judge = [time_sequence[i] - time_sequence[i + 1] <= delta2 for i in range(len(time_sequence) - 1)]
+#             current_j = sum(lag_judge)
+#             if current_i > 2:
+#                 if current_j >= 3:
+#                     arrival_time_record[round_ind, station_ind] = tl - (1.17 * current_j - 2.27)
+#                 else:
+#                     Nm = 1. * number_passenger_record[round_ind][station_ind] / seat_number
+#                     arrival_time_record[round_ind, station_ind] = tl - (-15.59 * Nm + 63.63 * Nm - 68.)
+#             j_val_record[round_ind, station_ind] = current_j
+#             i_val_record[round_ind, station_ind] = current_i
+#     return arrival_time_record, i_val_record, j_val_record
+
+def estimate_arrival_time_local(df_round, df_pax_num):
     # setting the time range for outliers and record clustering
     print('start benchmark local arrival time estimation')
+    df_record = df_round.copy().reset_index(drop=1)
     delta1 = 72  # threshold for outlier
     delta2 = 5  # threshold for clustering
     seat_number = 58  # this number is according to baike.baidu.com<<<<<<<<<<<<<<<<!!!!!!!
-    arrival_time_record = np.zeros((len(total_round), max_station))
-    # arrival time record is a round*station matrix <double>, this matrix records all inferred station-time information
-    i_val_record = np.zeros((len(total_round), max_station))
-    j_val_record = np.zeros((len(total_round), max_station))
-    for round_ind, round in enumerate(total_round):
-        for station_ind, station in enumerate(round):
-            time_sequence = line57_onebus_temp.loc[station, 'trans_time'].values
-            current_i = len(station)
-            if current_i == 0:
-                continue
-            tl = time_sequence[-1]
-            while True:
-                lag_judge = [time_sequence[i] - time_sequence[i + 1] <= delta1 for i in range(len(time_sequence) - 1)]
-                if sum(lag_judge) >= len(lag_judge):
-                    break
-                time_sequence = time_sequence[lag_judge]
-            lag_judge = [time_sequence[i] - time_sequence[i + 1] <= delta2 for i in range(len(time_sequence) - 1)]
-            current_j = sum(lag_judge)
-            if current_i > 2:
-                if current_j >= 3:
-                    arrival_time_record[round_ind, station_ind] = tl - (1.17 * current_j - 2.27)
-                else:
-                    Nm = 1. * number_passenger_record[round_ind][station_ind] / seat_number
-                    arrival_time_record[round_ind, station_ind] = tl - (-15.59 * Nm + 63.63 * Nm - 68.)
-            j_val_record[round_ind, station_ind] = current_j
-            i_val_record[round_ind, station_ind] = current_i
-    return arrival_time_record, i_val_record, j_val_record
 
+    # Detect outliers by threshold 1
+    df_record['is_outlier'] = 0
+    df_record.loc[(df_record['end_station'] == df_record['end_station'].shift(1))
+                  & (df_record['trans_time'] - df_record['trans_time'].shift(1) > delta1), 'is_outlier'] = 1
+    # Detect clusters by threshold 1
+    df_record = df_record[df_record['is_outlier'] == 0].reset_index(drop=1).drop('is_outlier', axis=1)
+    df_record['is_new_cluster'] = 0
+    df_record.loc[(df_record['end_station'] == df_record['end_station'].shift(1))
+                  & (df_record['trans_time'] - df_record['trans_time'].shift(1) > delta2), 'is_new_cluster'] = 1
+
+    # Format all required data into the same round*station dataframe
+    t1_record = df_record.groupby(['round_id', 'end_station']).max()['trans_time'].to_frame()
+    i_val_record_tmp = df_record.groupby(['round_id', 'end_station']).count()['trans_time'].to_frame()
+    j_val_record_tmp = df_record.groupby(['round_id', 'end_station']).sum()['is_new_cluster'].to_frame()
+    arrival_time_record = pd.DataFrame(index=i_val_record_tmp.index, columns=['arrival_time']).fillna(0)
+
+    # Case 1
+    l_case1 = ((i_val_record_tmp > 2) & (j_val_record_tmp >= 3)).index.tolist()
+    arrival_time_record.loc[l_case1, 'arrival_time'] = t1_record.loc[l_case1, 'trans_time'] - (
+    1.17 * j_val_record_tmp.loc[l_case1, 'is_new_cluster'] - 2.27)
+    # Case 2
+    l_case2 = ((i_val_record_tmp > 2) & (j_val_record_tmp < 3)).index.tolist()
+    Nm = 1. * df_pax_num.copy() / seat_number
+    arrival_time_record.loc[l_case2, 'arrival_time'] = t1_record.loc[l_case2, 'trans_time'] - (
+    -15.59 * Nm.loc[l_case2, 'pax_num'] + 63.63 * Nm.loc[l_case2, 'pax_num'] - 68.)
+
+    Nm['i_val'], Nm['j_val'], Nm['arr_time'] = i_val_record_tmp, j_val_record_tmp, arrival_time_record
+    return Nm['arr_time'], Nm['i_val'], Nm['j_val']
 
 def analysis_one_bus(line57_onebus_temp, max_station):
     # step 1. aggregate records into stations
-    # aggregate_station_list = aggregate_record_station(line57_onebus_temp)
-    line57_onebus_station_agg = aggregate_record_station(line57_onebus_temp)
+    df_station = aggregate_record_station(line57_onebus_temp)
     # step 2. detect round information
-    # total_round, round_direction_list = detect_round_info(aggregate_station_list, line57_onebus_temp, max_station)
-    line57_onebus_round = detect_round_info(line57_onebus_station_agg)
+    df_round = detect_round_info(df_station)
     # step 3. merge possibly round trip
-    # total_round, round_direction_list = merge_one_round(total_round, round_direction_list, max_station)
-    line57_onebus_merge = merge_one_round(line57_onebus_round)
+    df_round = merge_one_round(df_round)
+    df_round[['start_station','end_station']] = df_round[['start_station','end_station']].astype(int)
     # step 4. figure out number of boarding and alighting for each round
-    # alighting_record, boarding_record, valid_alighting_record, number_passenger_record = passenger_number_count(
-    #     total_round, round_direction_list, line57_onebus_temp, max_station)
-    line57_round_station_pax = passenger_num_count(line57_onebus_merge, max_station)
+    df_passenger_number = passenger_num_count(df_round, max_station)
     # step 5. estimate arrival time (using only current data) for each station using empirical formula
-    arrival_time_record, i_val_record, j_val_record = estimate_arrival_time_local(total_round, line57_onebus_temp,
-                                                                                  number_passenger_record, max_station)
+    df_arrival_time, df_i_val, df_j_val = estimate_arrival_time_local(df_round,df_passenger_number)
+
+    # convert the dataframe to array
+    def df_to_array(df,column):
+        return df.reset_index().pivot(index='round_id', columns='end_station', values=column).values
+
+    round_direction_list = df_round.groupby('round_id').max()['direction'].values
+    number_passenger_record = df_to_array(df_passenger_number,'pax_num')
+    arrival_time_record = df_to_array(df_arrival_time,'arr_time')
+    i_val_record = df_to_array(df_i_val,'i_val')
+    j_val_record = df_to_array(df_j_val,'j_val')
+
     print('this bus done' + '=' * 50)
     return round_direction_list, number_passenger_record, arrival_time_record, i_val_record, j_val_record
 
@@ -423,6 +469,9 @@ forward_round_info = []
 backward_round_info = []
 for i in range(3):
     line57_onebus = line57_record.loc[line57_record['bus_unique'] == i]
+    # If there are only less than 5 data belongs to 1 vehicle, we consider it invalid.
+    if len(line57_onebus) <= 5:
+        continue
     bus_id = le.classes_[i]
     line57_onebus_temp = line57_onebus.sort_values('trans_time').drop(['bus_id', 'bus_unique'], axis=1)
     print('start analysis of bus {0}, bus id{1}'.format(i, le.classes_[i]), '--' * 50)
