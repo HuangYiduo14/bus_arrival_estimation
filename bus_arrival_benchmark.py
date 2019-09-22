@@ -154,6 +154,11 @@ def detect_round_info(df_agg_station):
     df_record.loc[l_change.tolist(), 'is_new_station'] = 1
     df_record.loc[df_record['direction'] == 0, 'direction'] = np.nan
     df_record['direction'] = df_record['direction'].fillna(method='ffill')
+
+    # Calibrate station number which is not consistent with direction
+    l_need_cast = (df_record['start_station'] <= df_record['end_station']) * 2 - 1 != df_record['direction']
+    df_record.loc[l_need_cast, 'start_station'] = df_record.loc[l_need_cast, 'end_station']
+
     df_record['is_new_round'] = (df_record['direction'].shift(1) != df_record['direction']).astype(int)
 
     return df_record.drop(['prev_direction', 'succ_direction'], axis=1)
@@ -247,25 +252,18 @@ def merge_one_round(df_round):
 def passenger_num_count(df_merge, max_station):
     # step 4. figure out number of boarding and alighting for each round
     df_record = df_merge.copy().reset_index(drop=1)
-    df_record['end_station'] = df_record['end_station'].astype(int)
+    df_record[['start_station', 'end_station']] = df_record[['start_station', 'end_station']].astype(int)
 
     def cal_pax_num(df_record_round):
         round_board, round_alight = np.zeros(max_station + 1), np.zeros(max_station + 1)
         is_pos_direction = df_record_round['direction'].min() == 1
 
-        # There might be some error in boarding data(e.g. start to end direction is not consistent with our
-        # pre-identified direction), in order to get a valid passenger number in future calculation,
-        # we rule out these bording information.
-        df_board = df_record_round[(df_record_round['start_station'] <= max_station)
-                                   & (df_record_round['start_station'] > 0)
-                                   & ((df_record_round['start_station'] < df_record_round[
-            'end_station']) == is_pos_direction)].groupby('start_station').count()['direction']
+        # Find boarding number and alighting number for each station
+        df_board = df_record_round.groupby('start_station').count()['direction']
         round_board[df_board.index.tolist()] = df_board.values
-
-        # All positive alighting data is kept. Thus, the passenger number will be overestimated
-        # and gives us a upper bound.
-        df_alight = df_record_round[df_record_round['end_station'] > 0].groupby('end_station').count()['direction']
+        df_alight = df_record_round.groupby('end_station').count()['direction']
         round_alight[df_alight.index.tolist()] = df_alight.values
+
         # Passenger number is calculated for different direction respectively in an inverse order.
         if is_pos_direction:
             round_pax_num = np.flip((np.flip(round_alight) - np.flip(round_board)).cumsum())
@@ -414,15 +412,20 @@ le = LabelEncoder()
 line57_record['bus_unique'] = le.fit_transform(line57_record['bus_id'])
 station_unique = line57_record['end_station'].unique()
 max_station = station_unique.max()
+
+# Cast invalid station number into 1 and max_station
+line57_record = line57_record.drop_duplicates()
+line57_record['start_station'] = line57_record['start_station'].clip(lower=1, upper=max_station)
+line57_record['end_station'] = line57_record['end_station'].clip(lower=1, upper=max_station)
+
 # plt.figure()
 forward_round_info = []
 backward_round_info = []
 for i in range(3):
     line57_onebus = line57_record.loc[line57_record['bus_unique'] == i]
     bus_id = le.classes_[i]
-    line57_onebus_temp = line57_onebus.sort_values('trans_time').reset_index(drop=1).drop(['bus_id', 'bus_unique'], axis=1)
+    line57_onebus_temp = line57_onebus.sort_values('trans_time').drop(['bus_id', 'bus_unique'], axis=1)
     print('start analysis of bus {0}, bus id{1}'.format(i, le.classes_[i]), '--' * 50)
-
     round_direction_list, number_passenger_record, arrival_time_record, i_val_record, j_val_record = analysis_one_bus(
         line57_onebus_temp, max_station)
     # decompose each element and store them into different objects
