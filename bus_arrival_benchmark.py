@@ -51,15 +51,22 @@ def aggregate_record_station(df):
 
     # is_new_station indicates whether the current record is the first passenger alighting at the station.
     # Initialized with all ones.
-    df_record['is_new_station'] = 1
+    df_record['is_new_station'] = df_record['end_station']
     # 1. If current station is the same as the last record, then set is_new_station to 0.
     df_record.loc[df_record['end_station'] == df_record['end_station'].shift(1), 'is_new_station'] = 0
     # 2. If the last station and the next station is the same, then this record is considered invalid.
     #    Set is_new_station to 0 and calibrate this record.
-    df_record.loc[df_record['end_station'].shift(-1) == df_record['end_station'].shift(1), 'is_new_station'] = 0
+    df_new_station = df_record[df_record['is_new_station']>0].copy()
+    l_err_station = df_new_station[((df_new_station['is_new_station'].shift(1)-df_new_station['is_new_station'])*(df_new_station['is_new_station'].shift(-1)-df_new_station['is_new_station'])>0)&
+                         (df_new_station['trans_time'].shift(-1)-df_new_station['trans_time'].shift(1)<600)].index.tolist()
+    l_next_station = df_new_station[((df_new_station['is_new_station'].shift(2)-df_new_station['is_new_station'].shift(1))*(df_new_station['is_new_station']-df_new_station['is_new_station'].shift(1))>0)&
+                         (df_new_station['trans_time']-df_new_station['trans_time'].shift(2)<600)].index.tolist()
+    df_new_station.loc[l_err_station,'is_new_station'] = 0
+    df_new_station.loc[l_next_station,'is_new_station'] = 0
+    df_record.loc[df_record['is_new_station']>0, 'is_new_station'] = df_new_station['is_new_station']
+    df_record['is_new_station'] = df_record['is_new_station'].clip(upper=1)
     df_record.loc[df_record['is_new_station'] == 0, 'end_station'] = np.nan
     df_record = df_record.fillna(method='ffill')
-
     return df_record
 
 # def detect_round_info(aggregate_station_list, line57_onebus_temp, max_station):
