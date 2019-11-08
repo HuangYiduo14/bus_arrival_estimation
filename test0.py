@@ -65,7 +65,7 @@ line_interest.plot(ax=base,alpha=0.2)
 
 # initialize sql connector
 print('getting sql data')
-engine = create_engine('mysql+mysqlconnector://root:a2=b2=c2@localhost/beijing_bus_liuliqiao', echo=False)
+engine = create_engine('mysql+mysqlconnector://root:@localhost/beijing_bus_liuliqiao', echo=False)
 cnx =engine.raw_connection()
 station_interest_data['num'] = station_interest_data['num'].astype(int)
 new_station_interest_data = station_interest_data[['linenum','num','LINE_ID_y','NAME_y','direction','STATION_ID']]
