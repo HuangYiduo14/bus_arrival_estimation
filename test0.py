@@ -27,18 +27,32 @@ station_interest_data = busstation_shp.loc[station_interest_index]
 # 1. here we use station id and linenum to match station and line
 station_interest_data['STATION_ID'] = pd.to_numeric(station_interest_data['STATION_ID'],errors='coerce')
 station_interest_data = station_interest_data.merge(linestation, on='STATION_ID')
-#station_interest_data['LINE_ID_x']=pd.to_numeric(station_interest_data['LINE_ID_x'])
-#assert sum(station_interest_data['LINE_ID_x']!=station_interest_data['LINE_ID_y'])==0
-# after checking if LINE_ID is the same, we find lines that have >=2 stations in our area
+
+# filter those line from south to north
+def find_s2n(station_interest):
+    for lid in station_interest['LINE_ID_x'].unique():
+        temp = station_interest.loc[station_interest['LINE_ID_x']==lid]
+        temp_min = temp.loc[temp['num'].idxmin()]
+        temp_max = temp.loc[temp['num'].idxmax()]
+        if temp_min['geometry'].y==temp_max['geometry'].y:
+            continue
+        if temp_max['direction'] == '上行' and (temp_max['geometry'].y>temp_min['geometry'].y):
+            station_interest.loc[station_interest['LINE_ID_x']==lid,'interested']=True
+        elif temp_max['direction'] == '下行' and (temp_max['geometry'].y<temp_min['geometry'].y):
+            station_interest.loc[station_interest['LINE_ID_x'] == lid, 'interested'] = True
+    return station_interest
+station_interest_data['interested']=False
+station_interest_data = find_s2n(station_interest_data)
+station_interest_data = station_interest_data.loc[station_interest_data['interested']==True]
+
 count_line_station = station_interest_data['LINE_ID_x'].value_counts()
 station_interest_data.set_index('LINE_ID_x',inplace=True)
-station_interest_data = station_interest_data.loc[count_line_station[count_line_station>1].index]
-
 busline_shp.set_index('LINE_ID',inplace=True)
 for lid in count_line_station[count_line_station>1].index:
     if not(lid in busline_shp.index):
         station_interest_data = station_interest_data.drop(lid)
         print(lid, 'not found LINE_ID')
+
 line_interest = busline_shp.join(count_line_station[count_line_station>1],how='inner')
 line_interest.reset_index(inplace=True)
 station_interest_data.reset_index(inplace=True)
@@ -47,9 +61,7 @@ base = station_interest_data.plot()
 xsh_s2n.plot(ax=base,color='red',linewidth=4)
 line_interest.plot(ax=base,alpha=0.2)
 
-#station_interest_data['LINE_ID'].value_counts()
-#busstation_shp.plot(ax=base,color='green')
-#busline_shp.plot(ax=base, alpha = 0.1,color='red')
+
 
 
 '''
