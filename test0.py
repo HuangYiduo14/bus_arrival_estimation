@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 import geopandas
-import numpy as np
-import matplotlib.pyplot as plt
 import pandas as pd
+from sqlalchemy import create_engine
 info_list =['connector','link','node','zone_centroid']
 xsh_shp = {name: geopandas.read_file('data_car/西三环_version 3/西三环___{0}.SHP'.format(name)) for name in info_list}
 xsh_s2n = geopandas.read_file('data_car/data/西三环南向北/西三环南向北.SHP',encoding='gbk')
@@ -35,9 +34,12 @@ def find_s2n(station_interest):
         temp_min = temp.loc[temp['num'].idxmin()]
         temp_max = temp.loc[temp['num'].idxmax()]
         if temp_min['geometry'].y==temp_max['geometry'].y:
+            # if there is only one station in this area, do not keep this data
             continue
+        # if this bus goes from south to north and have more than 2 stations in this area,
+        # keep this bus line and its stations
         if temp_max['direction'] == '上行' and (temp_max['geometry'].y>temp_min['geometry'].y):
-            station_interest.loc[station_interest['LINE_ID_x']==lid,'interested']=True
+            station_interest.loc[station_interest['LINE_ID_x']==lid,'interested'] = True
         elif temp_max['direction'] == '下行' and (temp_max['geometry'].y<temp_min['geometry'].y):
             station_interest.loc[station_interest['LINE_ID_x'] == lid, 'interested'] = True
     return station_interest
@@ -61,7 +63,41 @@ base = station_interest_data.plot()
 xsh_s2n.plot(ax=base,color='red',linewidth=4)
 line_interest.plot(ax=base,alpha=0.2)
 
+# initialize sql connector
+print('getting sql data')
+engine = create_engine('mysql+mysqlconnector://root:a2=b2=c2@localhost/beijing_bus_liuliqiao', echo=False)
+cnx =engine.raw_connection()
+station_interest_data['num'] = station_interest_data['num'].astype(int)
+new_station_interest_data = station_interest_data[['linenum','num','LINE_ID_y','NAME_y','direction','STATION_ID']]
+new_station_interest_data.to_sql(con=engine, name='station_interest_data',if_exists='replace')
+print('table insert to mysql')
+start_record=dict()
+end_record=dict()
 
+k=0
+for idx in station_interest_data.index:
+    print(k)
+    k+=1
+    station_id = int(station_interest_data.loc[idx,'num'])
+    line_id = int(station_interest_data.loc[idx,'linenum'])
+    sql_select_start = """
+                select trans_time, trans_date, start_station, start_time, end_station, bus_id
+                from ic_record
+                where
+                (line_id ={0}1 or line_id = {0}0)
+                and start_station ={1};
+    """.format(line_id, station_id)
+    sql_select_end = """
+                select trans_time, trans_date, start_station, start_time, end_station, bus_id
+                from ic_record
+                where
+                (line_id ={0}1 or line_id = {0}0)
+                and end_station ={1};
+    """.format(line_id, station_id)
+    start_record[idx] = pd.read_sql(sql_select_start, cnx)
+    end_record[idx] = pd.read_sql(sql_select_end, cnx)
+cnx.close()
+print('database connection closed')
 
 
 '''
