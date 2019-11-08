@@ -4,7 +4,7 @@ import numpy as np
 import seaborn as sns
 
 # before kernel based method
-arrival = pd.read_csv('arrival time matrix3.csv', header=None)
+arrival = pd.read_csv('arrival time matrix.csv', header=None)
 arrival = arrival.fillna(0)
 arrival = arrival.values
 # rand = np.arange(1000,1300)
