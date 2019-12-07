@@ -21,9 +21,11 @@ def max_min(series):
     return series.max()-series.loc[series<0].max()
 
 result_diff = pd.DataFrame(columns=['diff_max','count','max_pivot','line_id'])
-print('line includes')
+print('line includes', linenum_list)
 for line_id in linenum_list:
-    station_intereted = tuple(count_start_end_local.loc[count_start_end['linenum'] == line_id, 'num'].values.tolist())
+    print('line_id:', line_id,'-'*50)
+    station_intereted = tuple(count_start_end_local.loc[count_start_end_local['linenum'] == line_id, 'num'].values.tolist())
+    print('station interested:',station_intereted)
     if(len(station_intereted)==1):
         continue
     direction = count_start_end.loc[count_start_end['linenum'] == line_id, 'direction'].values[0]
@@ -114,6 +116,4 @@ for line_id in linenum_list:
 result_diff.to_csv('result_{0}_{1}_diff.csv'.format(stop_pair[0],stop_pair[1]))
 result_diff.hist(column=['diff_max'],bins=100,density=True)
 plt.xlabel('time diff(s)')
-
-
 cnx.close()
