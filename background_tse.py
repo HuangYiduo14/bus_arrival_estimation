@@ -7,13 +7,19 @@ xsh_s2n = geopandas.read_file('data_car/data/西三环南向北/西三环南向�
 speed_record = pd.read_excel('data_car/data/link05m_lv5_20180601_西三环南向北.xlsx')
 speed_record_37592 = speed_record.loc[speed_record['linkid'] == 37592]
 
-engine = create_engine('mysql+mysqlconnector://root:******@localhost/beijing_bus_liuliqiao', echo=False)
+engine = create_engine('mysql+mysqlconnector://root:a2=b2=c2@localhost/beijing_bus_liuliqiao', echo=False)
 cnx = engine.raw_connection()
 count_start_end = pd.read_csv('count_start_end.csv', encoding='utf-8')
-linenum_list = count_start_end['linenum'].unique()
+
+
+stop_pair=['公主坟南', '六里桥北里']
+count_start_end_local = count_start_end.loc[count_start_end['NAME_y'].isin(stop_pair)]
+linenum_list = count_start_end_local['linenum'].unique()
 
 for line_id in linenum_list[:1]:
-    station_intereted = tuple(count_start_end.loc[count_start_end['linenum'] == line_id, 'num'].values.tolist())
+    station_intereted = tuple(count_start_end_local.loc[count_start_end['linenum'] == line_id, 'num'].values.tolist())
+    if(len(station_intereted)==1):
+        continue
     direction = count_start_end.loc[count_start_end['linenum'] == line_id, 'direction'].values[0]
     read_interested_start = '''
     select * from ic_record
@@ -66,30 +72,12 @@ for line_id in linenum_list[:1]:
     new_start.columns = new_start.columns.get_level_values(1)
     new_end.columns = new_end.columns.get_level_values(1)
     new_start.reset_index(inplace=True)
-    new_start.sort_values('max',inplace=True)
-    new_start['max_start'] = new_start['max']
     new_end.reset_index(inplace=True)
-    new_end.sort_values('max', inplace=True)
-    new_end['max_end']=new_end['max']
-    start_mg= pd.merge_asof(
-        new_start,new_end,
-        left_on='max',
-        right_on='max',
-        left_by=['bus_id','start_station'],
-        right_by=['bus_id','end_station'],
-        suffixes=['_start','_end'],
-        direction='nearest'
-    )
-    start_mg.sort_values(['bus_id','max'],inplace=True)
-    end_mg = pd.merge_asof(
-        new_end,new_start,
-        left_on='max',
-        right_on='max',
-        left_by=['bus_id','end_station'],
-        right_by=['bus_id','start_station'],
-        suffixes=['_end','_start'],
-        direction='nearest'
-    )
-
+    new_start.rename(columns={'start_station':'station'},inplace=True)
+    new_end.rename(columns={'end_station': 'station'}, inplace=True)
+    new_start['is_start']=1
+    new_end['is_start']=0
+    new_start_end = pd.concat([new_start,new_end],sort=True)
+    new_start_end.sort_values(['bus_id','max'],inplace=True)
 
 cnx.close()
