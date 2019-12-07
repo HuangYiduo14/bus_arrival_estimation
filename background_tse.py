@@ -2,6 +2,7 @@
 import geopandas
 import pandas as pd
 from sqlalchemy import create_engine
+import matplotlib.pyplot as plt
 
 xsh_s2n = geopandas.read_file('data_car/data/西三环南向北/西三环南向北.SHP', encoding='gbk')
 speed_record = pd.read_excel('data_car/data/link05m_lv5_20180601_西三环南向北.xlsx')
@@ -20,6 +21,7 @@ def max_min(series):
     return series.max()-series.loc[series<0].max()
 
 result_diff = pd.DataFrame(columns=['diff_max','count','max_pivot','line_id'])
+print('line includes')
 for line_id in linenum_list:
     station_intereted = tuple(count_start_end_local.loc[count_start_end['linenum'] == line_id, 'num'].values.tolist())
     if(len(station_intereted)==1):
@@ -61,6 +63,7 @@ for line_id in linenum_list:
     for bus_id_station in start_interested.index.unique():
         start_interested.loc[bus_id_station, 'diff_time'] = start_interested.loc[bus_id_station, 'time'] - \
                                                             start_interested.loc[bus_id_station, 'time'].shift()
+    for bus_id_station in end_interested.index.unique():
         end_interested.loc[bus_id_station, 'diff_time'] = end_interested.loc[bus_id_station, 'time'] - \
                                                           end_interested.loc[bus_id_station, 'time'].shift()
     end_interested['diff_time'].fillna(pd.to_timedelta('21min'), inplace=True)
@@ -109,8 +112,8 @@ for line_id in linenum_list:
     result_diff = pd.concat([result_diff,result_diff0])
 
 result_diff.to_csv('result_{0}_{1}_diff.csv'.format(stop_pair[0],stop_pair[1]))
-result_diff[['diff_max','count']].hist(bins=100)
-
+result_diff.hist(column=['diff_max'],bins=100,density=True)
+plt.xlabel('time diff(s)')
 
 
 cnx.close()
