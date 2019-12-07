@@ -76,7 +76,7 @@ new_station_interest_data = new_station_interest_data.replace(clean_nums)
 
 # initialize sql connector
 print('getting sql data')
-engine = create_engine('mysql+mysqlconnector://root:a2=b2=c2@localhost/beijing_bus_liuliqiao', echo=False)
+engine = create_engine('mysql+mysqlconnector://root:@localhost/beijing_bus_liuliqiao', echo=False)
 cnx =engine.raw_connection()
 
 """
