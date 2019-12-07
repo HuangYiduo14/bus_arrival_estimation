@@ -2,6 +2,7 @@
 import geopandas
 import pandas as pd
 from sqlalchemy import create_engine
+import matplotlib.pyplot as plt
 info_list =['connector','link','node','zone_centroid']
 xsh_shp = {name: geopandas.read_file('data_car/西三环_version 3/西三环___{0}.SHP'.format(name)) for name in info_list}
 xsh_s2n = geopandas.read_file('data_car/data/西三环南向北/西三环南向北.SHP',encoding='gbk')
@@ -14,7 +15,7 @@ busstation_shp = geopandas.read_file(
     'beijing_data/2014版北京路网_接点_六里桥区-2018/北京局部区域公交相关数据/北京局部区域公交相关数据/02 区域内公交站点GIS信息/station.shp', encoding='gbk')
 linestation = pd.read_csv('beijing_data/2014版北京路网_接点_六里桥区-2018/北京局部区域公交相关数据/北京局部区域公交相关数据/附件 刷卡数据与GIS对应规则/站点静态表.txt',encoding='gbk')
 
-region_buffer = xsh_s2n['geometry'].buffer(50)
+region_buffer = xsh_s2n['geometry'].buffer(5)
 
 xsh_buffered = xsh_s2n.copy()
 xsh_buffered['geometry'] = region_buffer
@@ -58,22 +59,66 @@ for lid in count_line_station[count_line_station>1].index:
 line_interest = busline_shp.join(count_line_station[count_line_station>1],how='inner')
 line_interest.reset_index(inplace=True)
 station_interest_data.reset_index(inplace=True)
+station_interest_data['coord'] = station_interest_data['geometry'].apply(lambda x: x.representative_point().coords[:][0])
 
 base = station_interest_data.plot()
 xsh_s2n.plot(ax=base,color='red',linewidth=4)
 line_interest.plot(ax=base,alpha=0.2)
+for idx,row in station_interest_data.iterrows():
+    plt.annotate(s=row['linenum'],xy=(row['coord'][0],row['coord'][1]))
+# make direction and linenum to int
+station_interest_data['num'] = station_interest_data['num'].astype(int)
+new_station_interest_data = station_interest_data[['linenum','num','LINE_ID_y','NAME_y','direction','STATION_ID']].copy()
+clean_nums ={
+    'direction':{'上行':1,'下行':-1}
+}
+new_station_interest_data = new_station_interest_data.replace(clean_nums)
 
 # initialize sql connector
 print('getting sql data')
-engine = create_engine('mysql+mysqlconnector://root:@localhost/beijing_bus_liuliqiao', echo=False)
+engine = create_engine('mysql+mysqlconnector://root:a2=b2=c2@localhost/beijing_bus_liuliqiao', echo=False)
 cnx =engine.raw_connection()
-station_interest_data['num'] = station_interest_data['num'].astype(int)
-new_station_interest_data = station_interest_data[['linenum','num','LINE_ID_y','NAME_y','direction','STATION_ID']]
-new_station_interest_data.to_sql(con=engine, name='station_interest_data',if_exists='replace')
-print('table insert to mysql')
+
+"""
+#new_station_interest_data.to_sql(con=engine, name='station_interest_data',if_exists='replace')
+#print('table insert to mysql')
+read_grouped_start = '''
+select line_id, direction, start_station, count(*) as count_record from ic_record
+where direction!=0
+and line_id in (57300,60631,55008,51300,43007,821,67,820,840,43002)
+group by line_id, direction, start_station;
+'''
+
+
+read_grouped_end = '''
+select line_id, direction, end_station, count(*) as count_record from ic_record
+where direction!=0
+and line_id in (57300,60631,55008,51300,43007,821,67,820,840,43002)
+group by line_id, direction, end_station;
+'''
+
+print('start grouping')
+start_grouped = pd.read_sql(sql=read_grouped_start,con=engine)
+print('end grouping')
+end_grouped = pd.read_sql(sql=read_grouped_end,con=engine)
+start_grouped.to_csv('start_grouped.csv')
+end_grouped.to_csv('end_grouped.csv')
+
+
+count_start = new_station_interest_data.merge(start_grouped, left_on=['linenum','num','direction'],right_on=['line_id','start_station','direction'])
+count_start.rename(columns={'count_record':'start_count'},inplace=True)
+count_end = new_station_interest_data.merge(end_grouped, left_on=['linenum','num','direction'],right_on=['line_id','end_station','direction'])
+count_end.rename(columns={'count_record':'end_count'},inplace=True)
+count_start['end_count'] = count_end['end_count']
+count_start.to_csv('count_start_end.csv')
+"""
+
+
+
+
 start_record=dict()
 end_record=dict()
-
+'''
 k=0
 for idx in station_interest_data.index:
     print(k)
@@ -98,9 +143,11 @@ for idx in station_interest_data.index:
     end_record[idx] = pd.read_sql(sql_select_end, cnx)
 cnx.close()
 print('database connection closed')
+'''
 
 
 '''
+import numpy as np
 dx = np.array([[0,0]])
 for i in xsh_s2n.index:
     print(i)
@@ -121,7 +168,7 @@ for i in xsh_s2n.index:
     dx_mean = dx0.mean(axis=0)
 
     s = s.translate(xoff=dx_mean[0], yoff=dx_mean[1])
-    #s.plot(ax=base, color='green')
+    s.plot(ax=base, color='green')
 dx = np.delete(dx,0,0)
 ddx = dx.copy()
 dx = dx.mean(axis=0)
@@ -132,3 +179,6 @@ dx = dx.mean(axis=0)
 '''
 
 
+
+
+cnx.close()

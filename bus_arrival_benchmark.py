@@ -5,17 +5,16 @@ from sklearn.preprocessing import LabelEncoder
 
 # initialize sql connector
 print('getting sql data')
-cnx = mysql.connector.connect(user='root', password='', database='beijing_bus_liuliqiao')
+cnx = mysql.connector.connect(user='root', password='a2=b2=c2', database='beijing_bus_liuliqiao')
 line_id = 57  # this line got second most records
 sql_select_line57 = """
-        select trans_time, trans_date, start_station, start_time, end_station, bus_id
-        from ic_record
-        where line_id = {0}0 or line_id = {0}1
-""".format(line_id)
+            select trans_time, trans_date, start_station, start_time, end_station, bus_id
+            from ic_record
+            where line_id = {0}
+    """.format(line_id)
 line57_record = pd.read_sql(sql_select_line57, cnx)
 cnx.close()
 print('database connection closed')
-
 
 
 def aggregate_record_station(df):
@@ -32,13 +31,14 @@ def aggregate_record_station(df):
     #    Set is_new_station to 0 and calibrate this record.
     df_new_station = df_record[df_record['is_new_station'] > 0].copy()
     l_err_station = df_new_station[((df_new_station['is_new_station'].shift(1) - df_new_station['is_new_station']) * (
-    df_new_station['is_new_station'].shift(-1) - df_new_station['is_new_station']) > 0) &
+            df_new_station['is_new_station'].shift(-1) - df_new_station['is_new_station']) > 0) &
                                    (df_new_station['trans_time'].shift(-1) - df_new_station['trans_time'].shift(
                                        1) < 600)].index.tolist()
     l_next_station = df_new_station[((
-                                     df_new_station['is_new_station'].shift(2) - df_new_station['is_new_station'].shift(
+                                             df_new_station['is_new_station'].shift(2) - df_new_station[
+                                         'is_new_station'].shift(
                                          1)) * (
-                                     df_new_station['is_new_station'] - df_new_station['is_new_station'].shift(
+                                             df_new_station['is_new_station'] - df_new_station['is_new_station'].shift(
                                          1)) > 0) &
                                     (df_new_station['trans_time'] - df_new_station['trans_time'].shift(
                                         2) < 600)].index.tolist()
@@ -79,11 +79,11 @@ def detect_round_info(df):
     df_record['direction'] = (df_record['prev_direction'] + df_record['succ_direction']) / 2
     # Extract the exact first record before and after round shift
     l_before_change = df_record[(
-                                    df_record['direction'].shift(-1) != 0) & (
-                                    df_record['direction'].shift(-2) == 0)].index.tolist()
+                                        df_record['direction'].shift(-1) != 0) & (
+                                        df_record['direction'].shift(-2) == 0)].index.tolist()
     l_after_change = df_record[(
-                                   df_record['direction'].shift(1) == 0) & (
-                                   df_record['direction'] != 0)].index.tolist()
+                                       df_record['direction'].shift(1) == 0) & (
+                                       df_record['direction'] != 0)].index.tolist()
     # Calculate time difference and the spliting time
     df_change = pd.DataFrame()
     df_change['before_time'] = df_record.loc[l_before_change, 'trans_time'].reset_index(drop=1)
@@ -108,7 +108,6 @@ def detect_round_info(df):
     return df_record.drop(['prev_direction', 'succ_direction'], axis=1)
 
 
-
 def merge_one_round(df):
     # step 3. merge possibly round trip
     # because some data point has error station information, some rounds are split into different rounds
@@ -127,7 +126,7 @@ def merge_one_round(df):
 
     # A valid merge requires the round is less than 10 min and has no significant seperation with the previous one.
     l_valid_merge = (
-        (df_round_time['round_time'] < 600) & (df_round_time['gap_time'] < df_round_time['round_time'])).values
+            (df_round_time['round_time'] < 600) & (df_round_time['gap_time'] < df_round_time['round_time'])).values
     l_start_round, l_end_round = np.array(l_start_round)[l_valid_merge], np.array(l_end_round)[l_valid_merge[:-1]]
     df_record.loc[l_start_round, 'is_new_round'] = 0
 
@@ -170,7 +169,7 @@ class Round:
         self.direction = direction
         self.i_val_round = i_val_round  # total number of passengers alighting at this station
         self.j_val_round = j_val_round  # total number of aggregated passengers
-        self.arrival_time_round = np.nan_to_num(arrival_time_round) # estimated arrival time
+        self.arrival_time_round = np.nan_to_num(arrival_time_round)  # estimated arrival time
         self.number_passenger_round = number_passenger_round  # total of passenger on board at this station
         self.round_last_time = self.arrival_time_round.max()  # the last valid estimated arrival
         # we will also use
@@ -221,12 +220,12 @@ def estimate_arrival_time_local(df_round, df_pax_num):
     # Case 1
     l_case1 = ((i_val_record_tmp > 2) & (j_val_record_tmp >= 3)).index.tolist()
     arrival_time_record.loc[l_case1, 'arrival_time'] = t1_record.loc[l_case1, 'trans_time'] - (
-        1.17 * j_val_record_tmp.loc[l_case1, 'is_new_cluster'] - 2.27)
+            1.17 * j_val_record_tmp.loc[l_case1, 'is_new_cluster'] - 2.27)
     # Case 2
     l_case2 = ((i_val_record_tmp > 2) & (j_val_record_tmp < 3)).index.tolist()
     Nm = 1. * df_pax_num.copy() / seat_number
     arrival_time_record.loc[l_case2, 'arrival_time'] = t1_record.loc[l_case2, 'trans_time'] - (
-        -15.59 * (Nm.loc[l_case2, 'pax_num']**2.) + 63.63 * Nm.loc[l_case2, 'pax_num'] - 68.)
+            -15.59 * (Nm.loc[l_case2, 'pax_num'] ** 2.) + 63.63 * Nm.loc[l_case2, 'pax_num'] - 68.)
 
     Nm['i_val'], Nm['j_val'], Nm['arr_time'] = i_val_record_tmp, j_val_record_tmp, arrival_time_record
     return Nm['arr_time'], Nm['i_val'], Nm['j_val']
@@ -268,12 +267,11 @@ def matrix_with_missing_construction(round_info):
     return M
 
 
-
 # preprocess time data: convert yyyymmdd HHMMSS to integer: seconds from 20180601 00:00:00
 line57_record['trans_time'] = (line57_record['trans_date'] - 20180601) * 24 * 3600 + line57_record[
-                                                                                         'trans_time'] // 10000 * 3600 + (
-                                                                                                                         line57_record[
-                                                                                                                             'trans_time'] % 10000) // 100 * 60 + \
+    'trans_time'] // 10000 * 3600 + (
+                                      line57_record[
+                                          'trans_time'] % 10000) // 100 * 60 + \
                               line57_record[
                                   'trans_time'] % 100
 le = LabelEncoder()
@@ -289,8 +287,8 @@ line57_record['end_station'] = line57_record['end_station'].clip(lower=1, upper=
 # plt.figure()
 forward_round_info = []
 backward_round_info = []
-#for i in range(len(le.classes_)):
-for i in range(5):
+# for i in range(len(le.classes_)):
+for i in line57_record['bus_unique'].unique():
     line57_onebus = line57_record.loc[line57_record['bus_unique'] == i]
     # If there are only less than 5 data belongs to 1 vehicle, we consider it invalid.
     if len(line57_onebus) <= 5:
@@ -320,6 +318,7 @@ forward_round_info.sort()
 backward_round_info.sort()
 import matplotlib.pyplot as plt
 import seaborn as sns
+
 ss = [s.round_last_time for s in forward_round_info]
 M = matrix_with_missing_construction(forward_round_info)
 plt.plot(ss)
