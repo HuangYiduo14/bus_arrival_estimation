@@ -5,7 +5,8 @@ from sklearn.preprocessing import LabelEncoder
 
 # initialize sql connector
 print('getting sql data')
-cnx = mysql.connector.connect(user='root', password='2', database='beijing_bus_liuliqiao')
+
+cnx = mysql.connector.connect(user='root', password='', database='beijing_bus_liuliqiao')
 line_id = 57  # this line got second most records
 sql_select_line57 = """
             select trans_time, trans_date, start_station, start_time, end_station, bus_id
@@ -30,25 +31,32 @@ def aggregate_record_station(df):
     # 2. If the last station and the next station is the same, then this record is considered invalid.
     #    Set is_new_station to 0 and calibrate this record.
     df_new_station = df_record[df_record['is_new_station'] > 0].copy()
-    l_err_station = df_new_station[((df_new_station['is_new_station'].shift(1) - df_new_station['is_new_station']) * (
-            df_new_station['is_new_station'].shift(-1) - df_new_station['is_new_station']) > 0) &
-                                   (df_new_station['trans_time'].shift(-1) - df_new_station['trans_time'].shift(
-                                       1) < 600)].index.tolist()
-    l_next_station = df_new_station[((
-                                             df_new_station['is_new_station'].shift(2) - df_new_station[
-                                         'is_new_station'].shift(
-                                         1)) * (
-                                             df_new_station['is_new_station'] - df_new_station['is_new_station'].shift(
-                                         1)) > 0) &
-                                    (df_new_station['trans_time'] - df_new_station['trans_time'].shift(
-                                        2) < 600)].index.tolist()
-    df_new_station.loc[l_err_station, 'is_new_station'] = 0
+
+    df_new_station['direction'] = (df_new_station['end_station'].shift(-1) - df_new_station['end_station']).clip(
+        lower=-1, upper=1)
+    # 2.1 Error occurs at only 1 station
+    l_err_station_1 = df_new_station[(df_new_station['direction'] == df_new_station['direction'].shift(-1)) &
+                                     (df_new_station['direction'].shift(1) != df_new_station[
+                                         'direction'])].index.tolist()
+    # 2.2 Error occurs at consecutive several stations
+    l_err_station_2 = df_new_station[(df_new_station['direction'] != df_new_station['direction'].shift(-1)) &
+                                     (df_new_station['direction'].shift(1) != df_new_station['direction']) &
+                                     (df_new_station['trans_time'].shift(1) - df_new_station['trans_time'].shift(
+                                         -1) <= 300)].index.tolist()
+    l_next_station = df_new_station[(df_new_station['direction'].shift(1) == df_new_station['direction']) &
+                                    (df_new_station['end_station'].shift(2) == df_new_station['end_station']) &
+                                    (df_new_station['direction'].shift(2) != df_new_station['direction'].shift(
+                                        1))].index.tolist()
+    df_new_station.loc[l_err_station_1, 'is_new_station'] = 0
+    df_new_station.loc[l_err_station_2, 'is_new_station'] = 0
+
     df_new_station.loc[l_next_station, 'is_new_station'] = 0
+    df_new_station.loc[0, 'is_new_station'] = 1
     df_record.loc[df_record['is_new_station'] > 0, 'is_new_station'] = df_new_station['is_new_station']
     df_record['is_new_station'] = df_record['is_new_station'].clip(upper=1)
     df_record.loc[df_record['is_new_station'] == 0, 'end_station'] = np.nan
     df_record = df_record.fillna(method='ffill')
-    return df_record
+    df_record.loc[df_record['end_station'] == df_record['end_station'].shift(1), 'is_new_station'] = 0
 
 
 def detect_round_info(df):
@@ -269,9 +277,10 @@ def matrix_with_missing_construction(round_info):
 
 # preprocess time data: convert yyyymmdd HHMMSS to integer: seconds from 20180601 00:00:00
 line57_record['trans_time'] = (line57_record['trans_date'] - 20180601) * 24 * 3600 + line57_record[
-    'trans_time'] // 10000 * 3600 + (
-                                      line57_record[
-                                          'trans_time'] % 10000) // 100 * 60 + \
+
+                                                                                         'trans_time'] // 10000 * 3600 + (
+                                                                                                                             line57_record[
+                                                                                                                                 'trans_time'] % 10000) // 100 * 60 + \
                               line57_record[
                                   'trans_time'] % 100
 le = LabelEncoder()
