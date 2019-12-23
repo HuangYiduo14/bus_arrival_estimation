@@ -10,7 +10,7 @@ holiday_list = pd.DataFrame({'day':holiday_list})
 xsh_s2n = geopandas.read_file('data_car/data/西三环南向北/西三环南向北.SHP', encoding='gbk')
 
 count_start_end = pd.read_csv('count_start_end.csv', encoding='utf-8')
-stop_pair=['公主坟南', '六里桥北里']
+stop_pair=['六里桥南', '六里桥北里']
 count_start_end_local = count_start_end.loc[count_start_end['NAME_y'].isin(stop_pair)]
 busstation_shp = geopandas.read_file(
     'beijing_data/2014版北京路网_接点_六里桥区-2018/北京局部区域公交相关数据/北京局部区域公交相关数据/02 区域内公交站点GIS信息/station.shp', encoding='gbk')
@@ -61,11 +61,14 @@ from statsmodels.nonparametric.smoothers_lowess import lowess
 def one_link_analysis(record, linkid=35972,day=1):
     speed_link = record.loc[record['linkid']==linkid]
     speed_link = speed_link.loc[speed_link['time'].dt.day==day]
-    x = speed_link['tm'].values
-    y = speed_link['speed']
-    new = lowess(y,x,frac=0.15)
-    residual = y-new
-    return new,residual
+    speed_link1 = speed_link.sort_values('tm')
+    x = speed_link1['tm'].values
+    y = speed_link1['speed']
+
+    new = lowess(y,x,frac=0.01,is_sorted=True)
+
+    residual = y-new[:,1]
+    return new,residual,x
 
 result_diff = pd.read_csv('result_{0}_{1}_diff_2.csv'.format(stop_pair[0],stop_pair[1]))
 
@@ -80,24 +83,30 @@ d_length_last = xsh_s2n1.iloc[-1,-2]-maxy
 d_length_first = miny -  xsh_s2n1.iloc[0,-1]
 
 new_result = pd.DataFrame(columns=['diff_max','count','max_pivot','board_count','alight_count','line_id','tm']+['speed_{0}'.format(linkid) for linkid in xsh_s2n1['LinkID'].values])
+residual_record = pd.DataFrame(columns=['time','residual','day','result'])
+
 for day in range(1,30):
     print(day,'-'*50)
     result_day = result_diff.loc[result_diff['max_pivot'].dt.day==day]
     for linkid in xsh_s2n1['LinkID'].values:
         print(linkid)
-        low_result = pd.DataFrame(one_link_analysis(speed_record,linkid,day),columns=['tm','speed'])
+        low_result_array, residual, time_x = one_link_analysis(speed_record,linkid,day)
+        low_result = pd.DataFrame(low_result_array,columns=['tm','speed'])
         low_result['tm'] = low_result['tm'].astype('int64')
         result_day['tm']= result_day['tm'].astype('int64')
         result_day = pd.merge_asof(
             result_day, low_result, on='tm'
         )
         result_day.rename(columns={'speed':'speed_{0}'.format(linkid)},inplace=True)
+        residual_one_record = pd.DataFrame({'time':time_x,'residual':residual,'result':low_result['speed'].values})
+        residual_one_record['day'] = day
+        residual_record = pd.concat([residual_record,residual_one_record])
     new_result = pd.concat([new_result,result_day])
 
 new_result['free_time'] = 0
-prop = 0.8
-ta = 1.
-tb = 2.
+prop = 0.9
+ta = 0.5
+tb = 1.
 
 
 for ind in xsh_s2n1.index:
@@ -121,3 +130,9 @@ print('count', new_result['diff_time'].count())
 print('travel time mean', new_result['diff_max'].mean())
 print('queuing time mean', new_result['diff_time'].mean())
 print('proportion', new_result['diff_time'].mean()/new_result['diff_max'].mean())
+
+plt.figure()
+residual_record['time'] = pd.to_numeric(residual_record['time'])
+residual_d1_record = residual_record.loc[residual_record['day']==1]
+residual_d1_record.plot(x='time',y='residual',kind='scatter')
+plt.plot()
