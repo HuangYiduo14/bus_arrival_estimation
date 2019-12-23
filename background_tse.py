@@ -29,10 +29,10 @@ xsh_s2n.reset_index(inplace=True,drop=True)
 
 xsh_s2n1 = xsh_s2n.loc[(xsh_s2n['max_y']>miny)&(xsh_s2n['min_y']<maxy)]
 xsh_s2n2 = xsh_s2n.loc[xsh_s2n1.index.min()-2:xsh_s2n1.index.max()+2]
-base = xsh_s2n1.plot(color='red')
-busstation_shp.plot(ax=base)
-xsh_s2n.plot(alpha=0.3,ax=base)
-xsh_s2n2.plot(alpha=0.5,ax=base,color='green')
+#base = xsh_s2n1.plot(color='red')
+#busstation_shp.plot(ax=base)
+#xsh_s2n.plot(alpha=0.3,ax=base)
+#xsh_s2n2.plot(alpha=0.5,ax=base,color='green')
 
 
 speed_record0 = pd.read_excel('data_car/data/link05m_lv5_20180601_西三环南向北.xlsx')
@@ -64,14 +64,18 @@ def one_link_analysis(record, linkid=35972,day=1):
     x = speed_link['tm'].values
     y = speed_link['speed']
     new = lowess(y,x,frac=0.15)
-    return new
+    residual = y-new
+    return new,residual
 
-result_diff = pd.read_csv('result_公主坟南_六里桥北里_diff_2.csv')
+result_diff = pd.read_csv('result_{0}_{1}_diff_2.csv'.format(stop_pair[0],stop_pair[1]))
+
+print('diff data loaded')
 result_diff.drop('Unnamed: 0',axis=1,inplace=True)
 result_diff.sort_values('max_pivot',inplace=True)
 result_diff['tm']=result_diff['max_pivot']%1000000
 result_diff['tm'] = (result_diff['tm']//100)%100*60 + (result_diff['tm']//10000)*60*60+result_diff['tm']%100
-result_diff['max_pivot'] = pd.to_datetime(result_diff['max_pivot'].astype(str))
+result_diff['max_pivot'] = pd.to_datetime(result_diff['max_pivot'].astype(str).str[:-2])
+print('1')
 d_length_last = xsh_s2n1.iloc[-1,-2]-maxy
 d_length_first = miny -  xsh_s2n1.iloc[0,-1]
 
@@ -83,6 +87,7 @@ for day in range(1,30):
         print(linkid)
         low_result = pd.DataFrame(one_link_analysis(speed_record,linkid,day),columns=['tm','speed'])
         low_result['tm'] = low_result['tm'].astype('int64')
+        result_day['tm']= result_day['tm'].astype('int64')
         result_day = pd.merge_asof(
             result_day, low_result, on='tm'
         )
@@ -90,6 +95,11 @@ for day in range(1,30):
     new_result = pd.concat([new_result,result_day])
 
 new_result['free_time'] = 0
+prop = 0.8
+ta = 1.
+tb = 2.
+
+
 for ind in xsh_s2n1.index:
     linkid = xsh_s2n1.loc[ind,'LinkID']
     if xsh_s2n1.loc[ind,'min_y']<miny:
@@ -98,12 +108,16 @@ for ind in xsh_s2n1.index:
         len_link = xsh_s2n1.loc[ind, 'LENGTH'] - d_length_last
     else:
         len_link = xsh_s2n1.loc[ind, 'LENGTH']
-    # here 36 is the ratio from km/h to m/s
-    new_result['free_time'] = new_result['free_time'] + 3.6*len_link/new_result['speed_{0}'.format(linkid)]
-new_result['diff_time'] = new_result['diff_max']-new_result['free_time']-new_result['board_count']*2.-new_result['alight_count']*1.
+    # here 3.6 is the ratio from km/h to m/s
+    new_result['free_time'] = new_result['free_time'] + 1./prop*3.6*len_link/new_result['speed_{0}'.format(linkid)]
+new_result['diff_time'] = new_result['diff_max']-new_result['free_time']-new_result['board_count']*tb-new_result['alight_count']*ta
 new_result = new_result.loc[new_result['diff_max']>=60]
 
 plt.figure()
 new_result['diff_max'].hist(bins=100,density=True)
 plt.xlabel('travel time(s)')
 #plt.title('distribution of queue delay')
+print('count', new_result['diff_time'].count())
+print('travel time mean', new_result['diff_max'].mean())
+print('queuing time mean', new_result['diff_time'].mean())
+print('proportion', new_result['diff_time'].mean()/new_result['diff_max'].mean())
