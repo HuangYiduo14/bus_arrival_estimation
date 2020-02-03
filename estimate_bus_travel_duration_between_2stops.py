@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 import matplotlib.pyplot as plt
 
 xsh_s2n = geopandas.read_file('data_car/data/西三环南向北/西三环南向北.SHP', encoding='gbk')
-speed_record = pd.read_excel('data_car/data/link05m_lv5_20180601_西三环南向北.xlsx')
+#speed_record = pd.read_excel('data_car/data/link05m_lv5_20180601_西三环南向北.xlsx')
 #speed_record_37592 = speed_record.loc[speed_record['linkid'] == 37592]
 
 

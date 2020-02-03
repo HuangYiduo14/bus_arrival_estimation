@@ -21,7 +21,6 @@ def aggregate_record_station(df):
     # step 1. aggregate consecutive end station and calibrate invalid data
     print('start aggregating record into station')
     df_record = df.copy().reset_index(drop=1)
-
     # is_new_station indicates whether the current record is the first passenger alighting at the station.
     # Initialized with all ones.
     df_record['is_new_station'] = df_record['end_station']
@@ -56,23 +55,19 @@ def detect_round_info(df):
     # if the direction changed, a new round starts, otherwise append record to current round
     print('start round decomposing')
     df_record = df.copy().reset_index(drop=1)
-
     # Identify direction by comparing consecutive station sequence
     l_new_station_ind = df_record.loc[(df_record['is_new_station']) == 1].index.tolist()
     l_new_station = df_record.loc[l_new_station_ind, 'end_station'].values
     # Greedy method is used to determine whether choose post direction or pre direction
     l_post_direction = l_new_station[1:] - l_new_station[:-1]
     l_pre_direction = np.insert(l_post_direction, 0, np.nan)
-
     l_new_station_time = df_record.loc[l_new_station_ind, 'trans_time'].values
     l_post_time_gap = l_new_station_time[1:] - l_new_station_time[:-1]
     l_pre_time_gap = np.insert(l_post_time_gap, 0, 0)
     l_skew_post = l_pre_time_gap > np.insert(l_post_time_gap, -1, 3600)
     l_pre_direction[l_skew_post] = np.insert(l_post_direction, -1, np.nan)[l_skew_post]
-
     df_record.loc[l_new_station_ind, 'direction'] = l_pre_direction
     df_record['direction'] = df_record['direction'].clip(lower=-1, upper=1)
-
     # Detect the round shift station by back-and-forth filling, denoted by 0
     df_record['prev_direction'] = df_record['direction'].fillna(method='ffill').fillna(method='bfill')
     df_record['succ_direction'] = df_record['direction'].fillna(method='bfill').fillna(method='ffill')
@@ -102,38 +97,38 @@ def detect_round_info(df):
     # Calibrate station number which is not consistent with direction
     l_need_cast = (df_record['start_station'] <= df_record['end_station']) * 2 - 1 != df_record['direction']
     df_record.loc[l_need_cast, 'start_station'] = df_record.loc[l_need_cast, 'end_station']
-
     df_record['is_new_round'] = (df_record['direction'].shift(1) != df_record['direction']).astype(int)
-
+    #df_record.to_csv('temp2.csv')
     return df_record.drop(['prev_direction', 'succ_direction'], axis=1)
 
-
-def merge_one_round(df):
+def merge_one_round(df_round):
     # step 3. merge possibly round trip
     # because some data point has error station information, some rounds are split into different rounds
-    # here we merge some rounds which are really short and have no significant seperation from previous round.
+    # 3.1. find 'small trip' (usually caused by data error) and merge 'small trip' to closest trip round
     print('start round merging')
-    df_record = df.copy().reset_index(drop=1)
+    round_info = df_round.groupby('round_id').agg({'direction':'mean','trans_time':['min','max'],'end_station':['min','max', pd.Series.nunique]})
+    round_info.columns = ['_'.join(i) for i in round_info.columns]
+    round_info['same_prev_direction'] = round_info['direction_mean'] != round_info['direction_mean'].shift(1)
+    round_info['same_next_direction'] = round_info['direction_mean'] != round_info['direction_mean'].shift(-1)
+    small_round_ind = round_info.loc[round_info['end_station_nunique']<=10]
+    def merge2(df_round, trip1, trip2):
+        # merge trip2(smaller) into trip1
+        s1 = df_round.loc[df_round['round_id']==trip1, 'direction']
+        direction1 = s1.iloc[0]
+        df_round.loc[df_round['round_id'] == trip2, 'direction'] = direction1
+        df_round.loc[df_round['round_id'] == trip2,'round_id'] = trip1
 
-    # Find the start and end records for a proposed new round.
-    l_start_round = df_record[df_record['is_new_round'] == 1].index.tolist()
-    l_end_round = df_record[df_record['is_new_round'].shift(-1) == 1].index.tolist()
-    df_round_time = pd.DataFrame()
-    df_round_time['start_time'] = df_record.loc[l_start_round, 'trans_time'].reset_index(drop=1)
-    df_round_time['end_time'] = df_record.loc[l_end_round, 'trans_time'].reset_index(drop=1)
-    df_round_time['round_time'] = df_round_time['end_time'] - df_round_time['start_time']
-    df_round_time['gap_time'] = df_round_time['start_time'] - df_round_time['end_time'].shift(1)
+    for ind in small_round_ind:
+        if round_info.loc[ind,'same_prev_direction']:
 
-    # A valid merge requires the round is less than 10 min and has no significant seperation with the previous one.
-    l_valid_merge = (
-            (df_round_time['round_time'] < 600) & (df_round_time['gap_time'] < df_round_time['round_time'])).values
-    l_start_round, l_end_round = np.array(l_start_round)[l_valid_merge], np.array(l_end_round)[l_valid_merge[:-1]]
-    df_record.loc[l_start_round, 'is_new_round'] = 0
 
-    # Label each round.
-    df_record['round_id'] = df_record['is_new_round'].cumsum()
+    # 3.2. merge 'big trip' round
 
-    return df_record
+
+
+
+    return round_info
+
 
 
 def passenger_num_count(df, max_station):
@@ -266,15 +261,24 @@ def matrix_with_missing_construction(round_info):
         M[i] = round_info[i].arrival_time_round
     return M
 
+def time2int(time):
+    return time//10000*3600+(time%10000)//100*60+time%100
+def int2timedate(time_s):
+    day = time_s//(24*3600)
+    day = min(day, 30)
+    time_s -= time_s%(24*3600)
+    hour = time_s//3600
+    time_s = time_s%3600
+    min = time_s//60
+    time_s = time_s%60
+    sec = time_s
+    return pd.to_datetime('2018-06-{0} {1}:{2}:{3}'.format(day,hour,min,sec))
 
 # preprocess time data: convert yyyymmdd HHMMSS to integer: seconds from 20180601 00:00:00
-line57_record['trans_time'] = (line57_record['trans_date'] - 20180601) * 24 * 3600 + line57_record[
-    'trans_time'] // 10000 * 3600 + (
-                                      line57_record[
-                                          'trans_time'] % 10000) // 100 * 60 + \
-                              line57_record[
-                                  'trans_time'] % 100
+line57_record['trans_time'] = (line57_record['trans_date'] - 20180601) * 24 * 3600 + line57_record['trans_time'].apply(time2int)
+line57_record['start_time'] = (line57_record['trans_date'] - 20180601) * 24 * 3600 + line57_record['start_time'].apply(time2int)
 le = LabelEncoder()
+
 line57_record['bus_unique'] = le.fit_transform(line57_record['bus_id'])
 station_unique = line57_record['end_station'].unique()
 max_station = station_unique.max()
@@ -283,12 +287,26 @@ max_station = station_unique.max()
 line57_record = line57_record.drop_duplicates()
 line57_record['start_station'] = line57_record['start_station'].clip(lower=1, upper=max_station)
 line57_record['end_station'] = line57_record['end_station'].clip(lower=1, upper=max_station)
+# testing: one bus
+i=0
+line57_onebus = line57_record.loc[line57_record['bus_unique'] == i]
+line57_onebus_temp = line57_onebus.sort_values('trans_time').drop(['bus_id', 'bus_unique'], axis=1)
+df_station = aggregate_record_station(line57_onebus_temp)
+df_round=detect_round_info(df_station)
+df_round['round_id'] = df_round['is_new_round'].cumsum()
+import matplotlib.pyplot as plt
+for i in df_round['round_id'].unique():
+    trip_info = df_round.loc[df_round['round_id']==i]
+    plt.scatter(trip_info['trans_time'], trip_info['end_station'])
+    plt.text(trip_info['trans_time'].iloc[0], trip_info['end_station'].iloc[0], trip_info['direction'].iloc[0])
 
-# plt.figure()
+
+
+"""
 forward_round_info = []
 backward_round_info = []
-# for i in range(len(le.classes_)):
-for i in line57_record['bus_unique'].unique():
+for i in range(1):
+#for i in line57_record['bus_unique'].unique():
     line57_onebus = line57_record.loc[line57_record['bus_unique'] == i]
     # If there are only less than 5 data belongs to 1 vehicle, we consider it invalid.
     if len(line57_onebus) <= 5:
@@ -328,3 +346,6 @@ plt.xlabel('station')
 plt.ylabel('round of bus')
 plt.title('before data imputation')
 plt.show()
+
+"""
+# plt.figure()

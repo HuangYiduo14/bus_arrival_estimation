@@ -52,10 +52,11 @@ speed_record['time'] = pd.to_datetime(speed_record['dt'].astype(str)+' '+speed_r
 speed_record=speed_record.drop(['dt','tm'],axis=1)
 speed_record = speed_record.loc[speed_record['time'].dt.time>pd.to_datetime('05:00:00').time()]
 speed_record = speed_record.loc[speed_record['time'].dt.time<pd.to_datetime('23:59:59').time()]
-
-
 speed_record['tm'] = speed_record['time'].dt.time.astype(str)
 speed_record['tm'] = speed_record['tm'].str[0].astype(int)*10*3600 + speed_record['tm'].str[1].astype(int)*3600 +speed_record['tm'].str[3].astype(int)*10*60+speed_record['tm'].str[4].astype(int)*60
+
+
+
 
 from statsmodels.nonparametric.smoothers_lowess import lowess
 def one_link_analysis(record, linkid=35972,day=1):
