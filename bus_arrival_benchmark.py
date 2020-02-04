@@ -1,58 +1,11 @@
-import mysql.connector
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import LabelEncoder
 from pylab import mpl
+from util import line_station2chinese, time2int, int2timedate, get_one_line, aggregate_record_station
 mpl.rcParams['font.sans-serif'] = ['SimHei']
 
-busstation = pd.read_csv(
-    'beijing_data/2014版北京路网_接点_六里桥区-2018/北京局部区域公交相关数据/北京局部区域公交相关数据/附件 刷卡数据与GIS对应规则/站点静态表.txt', encoding='gbk')
-# initialize sql connector
-print('getting sql data')
-cnx = mysql.connector.connect(user='root', password='a2=b2=c2', database='beijing_bus_liuliqiao')
-line_id = 57  # this line got second most records
-sql_select_line57 = """
-            select trans_time, trans_date, start_station, start_time, end_station, bus_id
-            from ic_record
-            where line_id = {0}
-    """.format(line_id)
-line57_record = pd.read_sql(sql_select_line57, cnx)
-cnx.close()
-print('database connection closed')
 
-
-def aggregate_record_station(df):
-    # step 1. aggregate consecutive end station and calibrate invalid data
-    print('start aggregating record into station')
-    df_record = df.copy().reset_index(drop=1)
-    # is_new_station indicates whether the current record is the first passenger alighting at the station.
-    # Initialized with all ones.
-    df_record['is_new_station'] = df_record['end_station']
-    # 1. If current station is the same as the last record, then set is_new_station to 0.
-    df_record.loc[df_record['end_station'] == df_record['end_station'].shift(1), 'is_new_station'] = 0
-    # 2. If the last station and the next station is the same, then this record is considered invalid.
-    #    Set is_new_station to 0 and calibrate this record.
-    df_new_station = df_record[df_record['is_new_station'] > 0].copy()
-    l_err_station = df_new_station[((df_new_station['is_new_station'].shift(1) - df_new_station['is_new_station']) * (
-            df_new_station['is_new_station'].shift(-1) - df_new_station['is_new_station']) > 0) &
-                                   (df_new_station['trans_time'].shift(-1) - df_new_station['trans_time'].shift(
-                                       1) < 600)].index.tolist()
-    l_next_station = df_new_station[((
-                                             df_new_station['is_new_station'].shift(2) - df_new_station[
-                                         'is_new_station'].shift(
-                                         1)) * (
-                                             df_new_station['is_new_station'] - df_new_station['is_new_station'].shift(
-                                         1)) > 0) &
-                                    (df_new_station['trans_time'] - df_new_station['trans_time'].shift(
-                                        2) < 600)].index.tolist()
-    df_new_station.loc[l_err_station, 'is_new_station'] = 0
-    df_new_station.loc[l_next_station, 'is_new_station'] = 0
-    df_record.loc[df_record['is_new_station'] > 0, 'is_new_station'] = df_new_station['is_new_station']
-    df_record['is_new_station'] = df_record['is_new_station'].clip(upper=1)
-    df_record.loc[df_record['is_new_station'] == 0, 'end_station'] = np.nan
-    df_record = df_record.fillna(method='ffill')
-    return df_record
 
 
 def detect_round_info(df):
@@ -142,9 +95,8 @@ def merge_one_round(df_round):
         df_round.loc[df_round['round_id'] == trip2,'direction'] = direction1
         df_round.loc[df_round['round_id'] == trip2,'round_id'] = trip1
         return df_round
-    round_number = round_info.shape[0]
-    ind = 1
-    while ind <= round_number-2:
+    ind = round_info.index.min()
+    while ind <= round_info.index.max()-2:
         if ind in small_round_ind:
             ind += 1
             continue
@@ -263,43 +215,9 @@ def matrix_with_missing_construction(round_info):
     for i in range(row_num):
         M[i] = round_info[i].arrival_time_round
     return M
-def line_station2chinese(line_id, station_id):
-    if line_id in busstation['linenum']:
-        line_info = busstation.loc[busstation['linenum'] == line_id]
-        if sum(line_info['num']==station_id)>0:
-            name = line_info.loc[line_info['num']==station_id,'stationname'].values[0]
-        else:
-            name=station_id
-    else:
-        name=station_id
-    return name
 
-def time2int(time):
-    return time//10000*3600+(time%10000)//100*60+time%100
-def int2timedate(time_s):
-    day = time_s//(24*3600)
-    day = 1+min(day, 30)
-    time_s = time_s%(24*3600)
-    hour = time_s//3600
-    time_s = time_s%3600
-    minute = time_s//60
-    time_s = time_s%60
-    sec = time_s
-    return pd.to_datetime('2018-06-{0} {1}:{2}:{3}'.format(day,hour,minute,sec))
-
-# preprocess time data: convert yyyymmdd HHMMSS to integer: seconds from 20180601 00:00:00
-line57_record['trans_time'] = (line57_record['trans_date'] - 20180601) * 24 * 3600 + line57_record['trans_time'].apply(time2int)
-line57_record['start_time'] = (line57_record['trans_date'] - 20180601) * 24 * 3600 + line57_record['start_time'].apply(time2int)
-le = LabelEncoder()
-
-line57_record['bus_unique'] = le.fit_transform(line57_record['bus_id'])
-station_unique = line57_record['end_station'].unique()
-max_station = station_unique.max()
-
-# Cast invalid station number into 1 and max_station
-line57_record = line57_record.drop_duplicates()
-line57_record['start_station'] = line57_record['start_station'].clip(lower=1, upper=max_station)
-line57_record['end_station'] = line57_record['end_station'].clip(lower=1, upper=max_station)
+line_id=57
+line57_record,le = get_one_line(line_id)
 # testing: one bus
 #for i in [0]:
 for i in line57_record['bus_unique'].unique():
