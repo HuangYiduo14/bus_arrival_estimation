@@ -3,7 +3,7 @@ import geopandas
 import pandas as pd
 from sqlalchemy import create_engine
 import matplotlib.pyplot as plt
-
+from util import password
 xsh_s2n = geopandas.read_file('data_car/data/西三环南向北/西三环南向北.SHP', encoding='gbk')
 #speed_record = pd.read_excel('data_car/data/link05m_lv5_20180601_西三环南向北.xlsx')
 #speed_record_37592 = speed_record.loc[speed_record['linkid'] == 37592]
@@ -17,7 +17,7 @@ linenum_list = count_start_end_local['linenum'].unique()
 
 def max_min(series):
     return series.max()-series.loc[series<0].max()
-engine = create_engine('mysql+mysqlconnector://root:a2=b2=c2@localhost/beijing_bus_liuliqiao', echo=False)
+engine = create_engine('mysql+mysqlconnector://root:{0}@localhost/beijing_bus_liuliqiao'.format(password), echo=False)
 cnx = engine.raw_connection()
 result_diff = pd.DataFrame(columns=['diff_max','count','max_pivot','board_count','alight_count','line_id'])
 print('line includes', linenum_list)

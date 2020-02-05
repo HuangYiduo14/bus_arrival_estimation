@@ -1,8 +1,11 @@
 import pandas as pd
 import mysql.connector
 from sklearn.preprocessing import LabelEncoder
+
 busstation = pd.read_csv(
     'beijing_data/2014版北京路网_接点_六里桥区-2018/北京局部区域公交相关数据/北京局部区域公交相关数据/附件 刷卡数据与GIS对应规则/站点静态表.txt', encoding='gbk')
+password = '*'
+
 
 def line_station2chinese(line_id, station_id):
     '''
@@ -13,13 +16,14 @@ def line_station2chinese(line_id, station_id):
     '''
     if line_id in busstation['linenum']:
         line_info = busstation.loc[busstation['linenum'] == line_id]
-        if sum(line_info['num']==station_id)>0:
-            name = line_info.loc[line_info['num']==station_id,'stationname'].values[0]
+        if sum(line_info['num'] == station_id) > 0:
+            name = line_info.loc[line_info['num'] == station_id, 'stationname'].values[0]
         else:
-            name=station_id
+            name = station_id
     else:
-        name=station_id
+        name = station_id
     return name
+
 
 def time2int(time):
     '''
@@ -27,7 +31,8 @@ def time2int(time):
     :param time: int
     :return: int
     '''
-    return time//10000*3600+(time%10000)//100*60+time%100
+    return time // 10000 * 3600 + (time % 10000) // 100 * 60 + time % 100
+
 
 def int2timedate(time_s):
     '''
@@ -35,17 +40,19 @@ def int2timedate(time_s):
     :param time_s: seconds int
     :return: datetime
     '''
-    day = time_s//(24*3600)
-    day = 1+min(day, 30)
-    time_s = time_s%(24*3600)
-    hour = time_s//3600
-    time_s = time_s%3600
-    minute = time_s//60
-    time_s = time_s%60
+    day = time_s // (24 * 3600)
+    day = 1 + min(day, 30)
+    time_s = time_s % (24 * 3600)
+    hour = time_s // 3600
+    time_s = time_s % 3600
+    minute = time_s // 60
+    time_s = time_s % 60
     sec = time_s
-    return pd.to_datetime('2018-06-{0} {1}:{2}:{3}'.format(day,hour,minute,sec))
+    return pd.to_datetime('2018-06-{0} {1}:{2}:{3}'.format(day, hour, minute, sec))
+
+
 def get_all_lines():
-    cnx = mysql.connector.connect(user='root', password='a2=b2=c2', database='beijing_bus_liuliqiao')
+    cnx = mysql.connector.connect(user='root', password=password, database='beijing_bus_liuliqiao')
     sql_select_lines = """
                     select distinct line_id
                     from ic_record
@@ -53,6 +60,20 @@ def get_all_lines():
     all_lines = pd.read_sql(sql_select_lines, cnx)
     cnx.close()
     return all_lines
+
+
+def count_line_station():
+    print('getting sql data')
+    cnx = mysql.connector.connect(user='root', password=password, database='beijing_bus_liuliqiao')
+    sql_select_line57 = """
+                    select count(1) as count_record, line_id, start_station, direction
+                    from ic_record
+                    group by line_id, start_station, direction
+            """
+    line_station_count = pd.read_sql(sql_select_line57, cnx)
+    cnx.close()
+    return line_station_count
+
 
 def get_one_line(line_id=57):
     '''
@@ -62,7 +83,7 @@ def get_one_line(line_id=57):
     '''
     # initialize sql connector
     print('getting sql data')
-    cnx = mysql.connector.connect(user='root', password='a2=b2=c2', database='beijing_bus_liuliqiao')
+    cnx = mysql.connector.connect(user='root', password=password, database='beijing_bus_liuliqiao')
     sql_select_line57 = """
                 select trans_time, trans_date, start_station, start_time, end_station, bus_id
                 from ic_record
@@ -82,10 +103,11 @@ def get_one_line(line_id=57):
     max_station = station_unique.max()
     # Cast invalid station number into 1 and max_station
     line57_record = line57_record.drop_duplicates()
-    #line57_record['start_station'] = line57_record['start_station'].clip(lower=1, upper=max_station)
+    # line57_record['start_station'] = line57_record['start_station'].clip(lower=1, upper=max_station)
     line57_record['end_station'] = line57_record['end_station'].clip(lower=1, upper=max_station)
 
     return line57_record, le, max_station
+
 
 def aggregate_record_station(df):
     # step 1. aggregate consecutive end station and calibrate invalid data

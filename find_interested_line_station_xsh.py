@@ -3,6 +3,7 @@ import geopandas
 import pandas as pd
 from sqlalchemy import create_engine
 import matplotlib.pyplot as plt
+from util import password
 info_list =['connector','link','node','zone_centroid']
 xsh_shp = {name: geopandas.read_file('data_car/西三环_version 3/西三环___{0}.SHP'.format(name)) for name in info_list}
 xsh_s2n = geopandas.read_file('data_car/data/西三环南向北/西三环南向北.SHP',encoding='gbk')
@@ -76,7 +77,7 @@ new_station_interest_data = new_station_interest_data.replace(clean_nums)
 
 # initialize sql connector
 print('getting sql data')
-engine = create_engine('mysql+mysqlconnector://root:2@localhost/beijing_bus_liuliqiao', echo=False)
+engine = create_engine('mysql+mysqlconnector://root:{0}@localhost/beijing_bus_liuliqiao'.format(password), echo=False)
 cnx =engine.raw_connection()
 
 """
@@ -177,8 +178,5 @@ dx = dx.mean(axis=0)
 #for name in info_list:
 #    xsh_shp[name].plot(ax=base,alpha=0.5)
 '''
-
-
-
 
 cnx.close()

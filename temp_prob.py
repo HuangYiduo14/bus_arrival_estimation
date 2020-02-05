@@ -37,7 +37,7 @@ def plot_record(cnx, line_id=57):
     for j in le.classes_[:5]:
         line57_onebus = line57_record.loc[line57_record['bus_id'] == j]
         line57_onebus = line57_onebus.sort_values('trans_time')
-        plt.scatter(line57_onebus['trans_time'], line57_onebus['end_station'], alpha=0.1, label=i)
+        plt.scatter(line57_onebus['trans_time'], line57_onebus['end_station'], alpha=0.1, label=j)
         plt.plot(line57_onebus['trans_time'], line57_onebus['end_station'], alpha=0.1)
     plt.legend()
     plt.show()
