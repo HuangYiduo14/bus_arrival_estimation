@@ -44,6 +44,15 @@ def int2timedate(time_s):
     time_s = time_s%60
     sec = time_s
     return pd.to_datetime('2018-06-{0} {1}:{2}:{3}'.format(day,hour,minute,sec))
+def get_all_lines():
+    cnx = mysql.connector.connect(user='root', password='a2=b2=c2', database='beijing_bus_liuliqiao')
+    sql_select_lines = """
+                    select distinct line_id
+                    from ic_record
+    """
+    all_lines = pd.read_sql(sql_select_lines, cnx)
+    cnx.close()
+    return all_lines
 
 def get_one_line(line_id=57):
     '''
@@ -73,9 +82,10 @@ def get_one_line(line_id=57):
     max_station = station_unique.max()
     # Cast invalid station number into 1 and max_station
     line57_record = line57_record.drop_duplicates()
-    line57_record['start_station'] = line57_record['start_station'].clip(lower=1, upper=max_station)
+    #line57_record['start_station'] = line57_record['start_station'].clip(lower=1, upper=max_station)
     line57_record['end_station'] = line57_record['end_station'].clip(lower=1, upper=max_station)
-    return line57_record, le
+
+    return line57_record, le, max_station
 
 def aggregate_record_station(df):
     # step 1. aggregate consecutive end station and calibrate invalid data

@@ -217,7 +217,7 @@ def matrix_with_missing_construction(round_info):
     return M
 
 line_id=57
-line57_record,le = get_one_line(line_id)
+line57_record,le,max_station = get_one_line(line_id)
 # testing: one bus
 #for i in [0]:
 for i in line57_record['bus_unique'].unique():
