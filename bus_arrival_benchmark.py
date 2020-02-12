@@ -231,7 +231,7 @@ for i in line57_record['bus_unique'].unique():
     df_round['round_id'] = df_round['is_new_round'].cumsum()
     df_round = merge_one_round(df_round)
     df_round[['start_station', 'end_station']] = df_round[['start_station', 'end_station']].astype(int)
-    #df_passenger_number = passenger_num_count(df_round, max_station)
+    df_passenger_number = passenger_num_count(df_round, max_station)
     #df_arrival_time, df_i_val, df_j_val = estimate_arrival_time_local(df_round, df_passenger_number)
     chinese_station_name =[line_station2chinese(line_id, k) for k in np.sort(df_round['end_station'].unique())]
     for j in df_round['round_id'].unique():

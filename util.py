@@ -4,7 +4,8 @@ from sklearn.preprocessing import LabelEncoder
 
 busstation = pd.read_csv(
     'beijing_data/2014版北京路网_接点_六里桥区-2018/北京局部区域公交相关数据/北京局部区域公交相关数据/附件 刷卡数据与GIS对应规则/站点静态表.txt', encoding='gbk')
-password = '*'
+password = ''
+
 
 
 def line_station2chinese(line_id, station_id):
@@ -22,6 +23,19 @@ def line_station2chinese(line_id, station_id):
             name = station_id
     else:
         name = station_id
+    return name
+def line2chinese(line_id, direction):
+    if line_id in busstation['linenum']:
+        if direction >0:
+            line_info = busstation.loc[(busstation['linenum'] == line_id)&(busstation['direction'] == '上行'),'linename']
+        else:
+            line_info = busstation.loc[(busstation['linenum'] == line_id)&(busstation['direction'] == '下行'),'linename']
+        if line_info.shape[0]>0:
+            name = line_info.iloc[0]
+        else:
+            name=line_id
+    else:
+        name=line_id
     return name
 
 
@@ -50,7 +64,6 @@ def int2timedate(time_s):
     sec = time_s
     return pd.to_datetime('2018-06-{0} {1}:{2}:{3}'.format(day, hour, minute, sec))
 
-
 def get_all_lines():
     cnx = mysql.connector.connect(user='root', password=password, database='beijing_bus_liuliqiao')
     sql_select_lines = """
@@ -62,12 +75,26 @@ def get_all_lines():
     return all_lines
 
 
+def line_bus_count():
+    cnx = mysql.connector.connect(user='root', password=password, database='beijing_bus_liuliqiao')
+    sql_select_lines = """
+                        select line_id, bus_id, direction, count(1) as count_record
+                        from ic_record
+                        group by line_id, bus_id, direction
+        """
+    line_bus = pd.read_sql(sql_select_lines, cnx)
+    cnx.close()
+    return line_bus
+
+
+
 def count_line_station():
     print('getting sql data')
     cnx = mysql.connector.connect(user='root', password=password, database='beijing_bus_liuliqiao')
     sql_select_line57 = """
                     select count(1) as count_record, line_id, start_station, direction
                     from ic_record
+                    where direction != 0
                     group by line_id, start_station, direction
             """
     line_station_count = pd.read_sql(sql_select_line57, cnx)

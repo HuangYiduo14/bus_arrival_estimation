@@ -3,7 +3,7 @@ import pandas as pd
 import geopandas
 import matplotlib.pyplot as plt
 from pylab import mpl
-mpl.rcParams['font.sans-serif'] = ['SimHei']
+#mpl.rcParams['font.sans-serif'] = ['SimHei']
 
 start_df = pd.read_csv('start_station_demand.csv',encoding='utf-8')
 end_df = pd.read_csv('end_station_demand.csv',encoding='utf-8')
@@ -40,13 +40,13 @@ station_info['label'] = kmeans.labels_
 # print location of clusters learned by kmeans object
 print(kmeans.cluster_centers_)
 plt.figure()
-colormap=['blue','red','green']
+colormap=['red','green','blue']
 for i in range(3):
-    plt.plot(kmeans.cluster_centers_[i][:24], label='comp{0},start'.format(i),color=colormap[i])
-    plt.plot(-kmeans.cluster_centers_[i][24:], label='comp{0},end'.format(i), color=colormap[i])
+    plt.plot(kmeans.cluster_centers_[i][:24], label='group={0}'.format(i+1),color=colormap[i])
+    plt.plot(-kmeans.cluster_centers_[i][24:], color=colormap[i])
 plt.legend()
 plt.xlabel('time (hour)')
-plt.ylabel('demand pattern (+: from -:to)')
+plt.ylabel('demand pattern (+:departure -:arrival)')
 plt.show()
 
 busstation_shp = geopandas.read_file(
