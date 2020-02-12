@@ -3,21 +3,21 @@ import geopandas
 import pandas as pd
 from sqlalchemy import create_engine
 import matplotlib.pyplot as plt
-
+from util import password
 xsh_s2n = geopandas.read_file('data_car/data/西三环南向北/西三环南向北.SHP', encoding='gbk')
-speed_record = pd.read_excel('data_car/data/link05m_lv5_20180601_西三环南向北.xlsx')
+#speed_record = pd.read_excel('data_car/data/link05m_lv5_20180601_西三环南向北.xlsx')
 #speed_record_37592 = speed_record.loc[speed_record['linkid'] == 37592]
 
 
 count_start_end = pd.read_csv('count_start_end.csv', encoding='utf-8')
-stop_pair=['公主坟南', '六里桥北里']
+stop_pair=['六里桥南','六里桥北里']
 count_start_end_local = count_start_end.loc[count_start_end['NAME_y'].isin(stop_pair)]
 linenum_list = count_start_end_local['linenum'].unique()
 
 
 def max_min(series):
     return series.max()-series.loc[series<0].max()
-engine = create_engine('mysql+mysqlconnector://root:2@localhost/beijing_bus_liuliqiao', echo=False)
+engine = create_engine('mysql+mysqlconnector://root:{0}@localhost/beijing_bus_liuliqiao'.format(password), echo=False)
 cnx = engine.raw_connection()
 result_diff = pd.DataFrame(columns=['diff_max','count','max_pivot','board_count','alight_count','line_id'])
 print('line includes', linenum_list)
